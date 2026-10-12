@@ -2,13 +2,16 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// The window: two small buttons, one line, and everywhere else somewhere to
-// drop music on. No toolbar, no sidebar, no list of what is queued — the
-// queue is what was dropped, in the order it was dropped, and it plays.
+// The window: a row of small buttons, one line, and everywhere else somewhere
+// to drop music on — with the cover of whatever is playing behind all of it,
+// when the file has a cover to show. No toolbar, no sidebar, no list of what
+// is queued: the queue is what was dropped, and it plays.
 //
 // Space plays and pauses from the moment the window opens, with nothing
 // clicked and nothing focused (see `watchKeys`). Everything drawn here is what
-// it is until the design waves dress it (P-06, P-07).
+// it is until the design waves dress it (P-06, P-07): the background is a
+// blurred cover with a dark laid over it, and there is no glass in it and
+// nothing about it glows.
 
 @main
 struct DajetPlayerApp: App {
@@ -47,6 +50,11 @@ struct PlayerView: View {
             bar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The cover of whatever is playing, behind everything and never in
+        // front of anything: a background in the strict sense, drawn under the
+        // content and not clickable, so that neither the buttons nor the drop
+        // know it is there.
+        .background { backdrop }
         // The window takes what the Finder can carry — a file, a folder, or a
         // handful of either — and nothing else: an address dragged in from a
         // browser is not a file URL, is not accepted, and never reaches the
@@ -61,6 +69,56 @@ struct PlayerView: View {
     }
 
     // MARK: - what is drawn
+
+    /// The window's background: the cover of the track that is playing,
+    /// stretched over the whole window, blurred once on a queue of its own
+    /// before it ever arrived here, and darkened so that the line at the foot
+    /// stays readable over a sleeve that may be busy or bright.
+    ///
+    /// No cover, or one that would not decode, and nothing from the track is
+    /// behind the content: only the dark underlay it has always had, with no
+    /// substitute drawn in place of the missing cover. The blur is in the
+    /// picture rather than in the drawing, so what happens here every frame is
+    /// one small bitmap stretched: the same cheap work at any size of window,
+    /// and none at all while nothing moves, which is what keeps a resize smooth
+    /// and an idle player idle.
+    private var backdrop: some View {
+        ZStack {
+            // What there is when a file has no sleeve to show, and what peeks
+            // through the dark laid over one that has: a plain, dark window,
+            // not a placeholder pretending to be a cover.
+            Color(red: 0.04, green: 0.04, blue: 0.05)
+            if let artwork = engine.artwork {
+                ZStack {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                    // The dark over it: enough that the line at the foot is
+                    // read rather than decoded, and not enough to lose the
+                    // colour that made the picture worth putting there.
+                    Color.black.opacity(0.62)
+                }
+                // The window's own size, and not the picture's: a cover
+                // stretched to fill is bigger than the window in one direction
+                // or the other, and the part of it outside is left behind.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                // One number, one fade: a cover arriving, being replaced by
+                // the next track's, or going when the queue comes to an end,
+                // is a change of the background and of nothing else here. A
+                // third of a second of it, and no more — long enough that a
+                // cover arriving is not a blink, short enough that the next
+                // track is never waited for.
+                .id(engine.artworkToken)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: engine.artworkToken)
+        // A background is not something to click on, and a drop that lands on
+        // it is a drop that lands on the window.
+        .allowsHitTesting(false)
+    }
 
     /// The middle of the window, where there is nothing to look at: what it
     /// says while nothing has been opened, and what it says while music is
@@ -84,15 +142,39 @@ struct PlayerView: View {
         engine.state == .idle && engine.count == 0 && engine.note == nil
     }
 
-    /// The foot of the window: the two buttons, and the line that says what is
-    /// playing. Two buttons, because two is all there is to ask of this
-    /// player — to open something, and to start it or stop it for a while.
+    /// The foot of the window: the buttons, and the line that says what is
+    /// playing.
+    ///
+    /// Two buttons were here before — to open something, and to start it or
+    /// stop it for a while — and two more walk the queue in front of them,
+    /// which is the other thing anyone ever asks of a player. At the far end,
+    /// past the line, the two modes: how the queue is walked, and what happens
+    /// when the walk comes to an end. Each of them is the accent while it is
+    /// on and the quiet grey of everything else in the bar while it is not,
+    /// which is all the "on" a bar this small needs — the shapes themselves
+    /// come with the design waves.
     private var bar: some View {
         HStack(spacing: 10) {
+            Button { engine.previous() } label: {
+                Image(systemName: "backward.fill")
+                    // A fixed width, so the symbols don't shuffle the row
+                    // about as they swap.
+                    .frame(width: 16)
+            }
+            .disabled(engine.count == 0)
+            .help("Previous — the start of this track, once three seconds of it have gone by")
+            .accessibilityLabel("Previous track")
+
+            Button { engine.next() } label: {
+                Image(systemName: "forward.fill")
+                    .frame(width: 16)
+            }
+            .disabled(engine.count == 0)
+            .help("Next track")
+            .accessibilityLabel("Next track")
+
             Button { engine.toggle() } label: {
                 Image(systemName: engine.state == .playing ? "pause.fill" : "play.fill")
-                    // A fixed width, so the two symbols don't shuffle the row
-                    // about as they swap.
                     .frame(width: 16)
             }
             .disabled(engine.count == 0)
@@ -110,19 +192,80 @@ struct PlayerView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+
+            Button { engine.toggleShuffle() } label: {
+                Image(systemName: "shuffle")
+                    .frame(width: 16)
+                    .foregroundStyle(engine.shuffle ? Color.accentColor : Color.secondary)
+            }
+            .help(engine.shuffle
+                ? "Shuffled — click to walk the queue in the order it was opened"
+                : "In order — click to shuffle the queue")
+            .accessibilityLabel("Shuffle")
+            .accessibilityValue(engine.shuffle ? "On" : "Off")
+
+            Button { engine.cycleRepeat() } label: {
+                // Two symbols for three states, because that is all there are:
+                // off and the whole queue wear the same one, and the accent —
+                // with the words in `repeatHelp` — is what tells them apart.
+                Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
+                    .frame(width: 16)
+                    .foregroundStyle(
+                        engine.repeatMode == .off ? Color.secondary : Color.accentColor
+                    )
+            }
+            .help(repeatHelp)
+            .accessibilityLabel("Repeat")
+            .accessibilityValue(repeatSaid)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
     }
 
-    /// The one line: what is playing, and where it sits in what was opened —
-    /// or whatever the player has to say instead. Empty at the very start,
-    /// where the middle of the window does the talking.
+    /// What the repeat button says about itself, which is the three states it
+    /// walks through put into words: one of them is a different symbol, and
+    /// the other two are only ever told apart here.
+    private var repeatHelp: String {
+        switch engine.repeatMode {
+        case .off: return "Repeat off — the queue is walked once through"
+        case .all: return "Repeat the queue — a new pass when one comes to an end"
+        case .one: return "Repeat this track — until Next or Previous says otherwise"
+        }
+    }
+
+    /// The same three states, for anyone listening rather than looking.
+    private var repeatSaid: String {
+        switch engine.repeatMode {
+        case .off: return "Off"
+        case .all: return "The whole queue"
+        case .one: return "This track"
+        }
+    }
+
+    /// The one line: what is playing, said the way a sleeve says it, and where
+    /// the player is in the pass it is walking — or whatever the player has to
+    /// say instead. Empty at the very start, where the middle of the window
+    /// does the talking.
     private var line: String {
         if let note = engine.note { return note }
         guard let track = engine.track else { return "" }
         let verb = engine.state == .paused ? "Paused" : "Playing"
-        return "\(verb) \(engine.number) of \(engine.count) — \(track.lastPathComponent)"
+        return "\(verb) \(engine.number) of \(engine.count) — \(names(of: track))"
+    }
+
+    /// The track's names, of those its file has: who, then what, then the
+    /// album it came out on — with the file's own name standing in for a title
+    /// it never gave, which is what the line said before there was any reading
+    /// of tags at all. So a tagged file says «Artist — Title — Album», a file
+    /// with a title and nothing else says «Title», and a file with no tags at
+    /// all says «track.mp3», exactly as it did before.
+    ///
+    /// The names are read on a queue of their own and arrive a moment after
+    /// the track starts, so what is on screen a beat early is the filename —
+    /// which is the fallback, and not a mistake.
+    private func names(of track: URL) -> String {
+        let said: [String?] = [engine.artist, engine.title ?? track.lastPathComponent, engine.album]
+        return said.compactMap { $0 }.joined(separator: " — ")
     }
 
     // MARK: - the two ways in
