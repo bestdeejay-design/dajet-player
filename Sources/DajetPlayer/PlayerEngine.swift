@@ -100,6 +100,12 @@ final class PlayerEngine: ObservableObject {
     /// about the places the files hold in what was opened.
     @Published private(set) var number = 0
     @Published private(set) var count = 0
+    /// The folder the queue came from, when it came from one: what the side
+    /// menu marks as the playlist being played, and what tells a click on the
+    /// folder already playing that there is nothing to open. Nothing at all
+    /// when what was opened was a handful of files — loose files are a queue
+    /// and not a place, and the menu is a list of places.
+    @Published private(set) var source: URL?
     /// A line about anything but the track: nothing in what was opened is
     /// music, or the queue has played itself out. Cleared when something is
     /// opened and when a track starts.
@@ -120,6 +126,11 @@ final class PlayerEngine: ObservableObject {
     /// or one that will not decode, and the window is then the plain dark it
     /// has always been.
     @Published private(set) var artwork: NSImage?
+    /// The cover of the track that is playing as it is: small, sharp, and the
+    /// same picture the Mac's Now Playing card is given. The window's sleeve is
+    /// drawn from this one (P-06R) — the blurred `artwork` is the wash a
+    /// background wants, and a sleeve is not a wash.
+    @Published private(set) var cover: NSImage?
     /// A number that goes up with every change of `artwork`, for the window to
     /// hang its fade on. The picture is a new object each time and the old one
     /// is gone by the time the new one arrives, so what a cross-fade wants is
@@ -258,11 +269,57 @@ final class PlayerEngine: ObservableObject {
             note = Self.nothingPlays
             return
         }
+        adopt(files, from: Self.folder(among: urls))
+        play(0)
+    }
+
+    /// One track of one playlist, played now: what a click on a track in the
+    /// side menu is (P-06R). The folder becomes the queue — so Next, Previous,
+    /// shuffle and repeat walk on through it — and the track that was clicked
+    /// is where the pass starts.
+    ///
+    /// A folder that is already the queue is not opened again: the queue that
+    /// is there is the one kept, and only the place in it changes, so clicking
+    /// through a folder does not read the folder again for every click or draw
+    /// a new pass behind the listener's back.
+    func play(_ track: URL, in folder: URL) {
+        // By path, not by URL: the same folder arrives with a slash on the end
+        // of its URL from one place and without one from another, and a click
+        // that failed to recognise the folder already playing would start the
+        // pass again from the top.
+        let wanted = Playlist.plain(track)
+        if let origin = source, Playlist.plain(origin) == Playlist.plain(folder),
+           let index = queue.firstIndex(where: { Playlist.plain($0) == wanted }),
+           let place = order.firstIndex(of: index) {
+            play(place)
+            return
+        }
+        let files = music(folder)
+        guard let index = files.firstIndex(where: { Playlist.plain($0) == wanted }) else { return }
+        adopt(files, from: folder)
+        play(order.firstIndex(of: index) ?? 0)
+    }
+
+    /// Take a list of files as the queue, and remember the folder it came from
+    /// when it came from one. The two modes are left as the listener set them,
+    /// so that playing a second folder on a player that was told to shuffle
+    /// gives a shuffled folder.
+    private func adopt(_ files: [URL], from folder: URL?) {
         queue = files
+        source = folder
         count = files.count
         said = [:]
         newPass()
-        play(0)
+    }
+
+    /// The folder a drop was, when it was exactly one thing and that thing was
+    /// a folder. A single file is not a folder, and neither is a handful of
+    /// them.
+    private static func folder(among urls: [URL]) -> URL? {
+        guard urls.count == 1,
+              (try? urls[0].resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        else { return nil }
+        return urls[0]
     }
 
     /// The music in one thing that was dropped: the file itself, if it is one
@@ -275,9 +332,21 @@ final class PlayerEngine: ObservableObject {
         guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]) else {
             return []   // Nothing there by that name any more.
         }
-        guard values.isDirectory == true else { return playable(url) ? [url] : [] }
+        guard values.isDirectory == true else { return Self.playable(url) ? [url] : [] }
+        return Self.tracks(in: url)
+    }
+
+    /// The music in one folder, in the order the Finder lists it: the files of
+    /// a kind that plays, sorted the way the Finder sorts them, so that numbers
+    /// in names are compared as numbers and "Track 2" comes before "Track 10".
+    ///
+    /// Read here and nowhere else, so that the list the side menu shows for a
+    /// playlist and the queue a dropped folder becomes are the same list in the
+    /// same order: the menu cannot come to disagree with the player about what
+    /// is in a folder, because it is the same reading of it (see Side.swift).
+    static func tracks(in folder: URL) -> [URL] {
         let inside = (try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: [.isDirectoryKey],
+            at: folder, includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )) ?? []
         return inside
@@ -291,8 +360,8 @@ final class PlayerEngine: ObservableObject {
     }
 
     /// Whether this is a file of a kind that plays.
-    private func playable(_ url: URL) -> Bool {
-        Self.formats.contains(url.pathExtension.lowercased())
+    static func playable(_ url: URL) -> Bool {
+        formats.contains(url.pathExtension.lowercased())
     }
 
     // MARK: - the buttons
@@ -691,6 +760,7 @@ final class PlayerEngine: ObservableObject {
     private func forget() {
         stop()
         queue = []
+        source = nil
         order = []
         count = 0
         failed = []
@@ -714,6 +784,7 @@ final class PlayerEngine: ObservableObject {
         artist = nil
         album = nil
         artwork = nil
+        cover = nil
         artworkToken += 1
         card = nil
         position = 0
@@ -956,6 +1027,11 @@ final class PlayerEngine: ObservableObject {
         // bitmaps were made — and one of them blurred — on the queue that read
         // the file.
         artwork = sleeve.artwork.map {
+            NSImage(cgImage: $0, size: CGSize(width: CGFloat($0.width), height: CGFloat($0.height)))
+        }
+        // The same picture as it is, for the window's own sleeve: the camera
+        // in the middle of the player wants the photograph, not the wash.
+        cover = sleeve.cover.map {
             NSImage(cgImage: $0, size: CGSize(width: CGFloat($0.width), height: CGFloat($0.height)))
         }
         // The same picture as it is, for the places outside this window: the
