@@ -127,8 +127,12 @@ struct VisualEffect: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
-        view.blendingMode = blending
+        // Only when it is a different one: SwiftUI asks this again after every
+        // update of the window's body — the progress bar ticks its way through
+        // a track several times a second — and setting a material that is
+        // already set asks the compositor to do the blur again for nothing.
+        if view.material != material { view.material = material }
+        if view.blendingMode != blending { view.blendingMode = blending }
     }
 
     /// A background is a background: the window takes the clicks and the drops
@@ -164,7 +168,13 @@ struct WindowDress: NSViewRepresentable {
 
     final class Probe: NSView {
         var glass = false {
-            didSet { dress() }
+            // And again only when it is a different one: dressing the window
+            // is cheap, but it is not free, and this is handed the same value
+            // on every one of the window's many redraws.
+            didSet {
+                guard glass != oldValue else { return }
+                dress()
+            }
         }
 
         /// Here only to learn the window, never to take a click.
