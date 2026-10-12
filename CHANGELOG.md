@@ -13,8 +13,10 @@ posted as the update. What is planned but not done yet lives in
 
 Opening music and playing it: a folder, a file, or a handful of either, dropped
 on the window or chosen from Open Folder… — played in order, one track after
-another, with Space for play and pause. Still nothing in the app but SwiftUI,
-AVFoundation and this Mac.
+another, with its title, artist and album from the file, and its cover behind
+the window when it has one. Next, Previous, shuffle and repeat for the queue;
+Space still plays and pauses. Still only Apple's frameworks and this Mac,
+with nothing third-party.
 
 ### Added
 
@@ -22,20 +24,30 @@ AVFoundation and this Mac.
   behind it: mp3, m4a (AAC), flac, wav and aiff (and `.aif`), a folder read for
   the music in it, its files sorted the way the Finder sorts them ("Track 2"
   before "Track 10"), the next track as each one ends, and `idle` / `playing` /
-  `paused`. A file that will not open is passed over, and when nothing that was
-  opened plays, the player says so rather than sitting silent
+  `paused`. Next and Previous walk the pass; Fisher–Yates shuffles a separate
+  list of queue places without rewriting the queue; repeat cycles through off,
+  all and one. Local title, artist, album and artwork are read asynchronously
+  from the file and the names are cached. A file that will not open is passed
+  over, and when nothing that was opened plays, the player says so rather than
+  sitting silent
 - `Sources/DajetPlayer/App.swift` — the window that takes the drop (files and
-  folders, anywhere in it), two buttons — play/pause and Open Folder…, which
-  carries ⌘O — a line saying what is playing and where it sits in what was
-  opened, and Space wired to play and pause from the moment the window opens:
-  a key monitor, so nothing has to be clicked or focused first
-- Every track played is a `file://` URL on this Mac, and nothing here will
-  take an address that could be somewhere else — "no network requests" is now
-  a property of the code, not only of the intent
+  folders, anywhere in it), buttons for Previous, Next, play/pause and Open
+  Folder… (which carries ⌘O), shuffle and repeat controls, and a line saying
+  what is playing and where it sits in the pass. A local cover is blurred once
+  off the main thread and fades in behind the contents; no cover leaves the
+  plain dark underlay showing. Space is still wired to play and pause from
+  the moment the window opens: a key monitor, so nothing has to be clicked or
+  focused first
+- Every track played is a `file://` URL on this Mac, and all the names and
+  pictures are read from that file — nothing here will take an address that
+  could be somewhere else. "No network requests" is a property of the code,
+  not only of the intent
 
 ### Not yet
 
-- Title, artist and cover art, Next/Previous, shuffle and repeat (P-04)
+- The `←` / `→` shortcuts named in the acceptance criteria for P-04. They were
+  left out pending the coordinator's decision on whether they belong in this
+  wave; the Previous and Next buttons are present
 - The keyboard's media keys, progress, scrubbing and volume (P-05)
 - Both skins, the equalizer, the disk image, the ZIP, the appcast and the
   Homebrew tap (P-06…P-09)
