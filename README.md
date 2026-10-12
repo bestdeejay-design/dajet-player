@@ -10,9 +10,9 @@ Open Dajet Player. Drop a folder of music on it — it plays, in the order the F
 
 ## Where it is
 
-**v0.1.0 — plays.** The project builds with SwiftPM and `./build.sh`, and what they make opens as an ordinary Mac app: one window, no toolbar, no sidebar, nothing but a Play button, an Open Folder… button and one line. Drop a folder of music — or a few files, mp3, m4a, flac, wav, aiff — and it plays them one after another. Space stops it and starts it again.
+**v0.2.0 — knows what it plays.** The project builds with SwiftPM and `./build.sh`, and what they make opens as an ordinary Mac app: one window, no toolbar, no sidebar; a line saying what is playing, Previous and Next, play/pause and Open Folder…, shuffle and repeat. Drop a folder of music — or a few files, mp3, m4a, flac, wav, aiff — and it plays them one after another, its title, artist and album read from the file, its cover blurred behind the window; a file that will not open is passed over, and the player says so when nothing plays at all. Space stops it and starts it again, and at the end of a pass it starts from the top.
 
-Cover art, shuffle and the keyboard's media keys are the waves that follow; the queue is in [ROADMAP.md](ROADMAP.md).
+The keyboard's media keys, progress and volume are the waves that follow; the queue is in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -26,11 +26,9 @@ Launch it, open Network Monitor — zero connections. Nothing leaves the machine
 
 ## What it can
 
-**P-03 — play what was dropped.** A folder or a handful of files: they play, one after another, in the order they were dropped; a file that will not open is passed over, and the player says so when nothing plays at all. That is all this step does, and it says so rather than pretending otherwise. What is coming, in order:
+**P-04 — knows what it plays.** Title, artist and album read from the file, a local cover blurred and faded in behind the window, Next and Previous (Previous restarting a track once its three seconds have gone, otherwise stepping back; on the first track it restarts), shuffle that never repeats a track twice in a pass, and repeat cycling through off, all and one. A file that will not open is passed over, and when nothing that was opened plays, the player says so. What is coming, in order:
 
-- **P-04** — title, artist and cover art, Next/Previous, shuffle and repeat
-- **P-05** — the keyboard's media keys, a progress bar you can drag, volume that stays where you left it
-- **P-05** — the keyboard's media keys, a progress bar you can drag, volume that stays where you left it
+- **P-05** — the keyboard's media keys, a progress bar you can drag, volume that stays where you left it, and the `←` / `→` shortcuts
 - **after that** — the two skins, the equalizer, the disk image and the Homebrew tap (P-06…P-09)
 
 ## Privacy
