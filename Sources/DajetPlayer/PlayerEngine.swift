@@ -83,10 +83,11 @@ final class PlayerEngine: ObservableObject {
     /// because they would not open. The count is what keeps a folder of files
     /// that are not what their names claim from being walked for ever.
     private var failed = 0
-    /// What the item on the player has to say: that it won't play, and that it
-    /// has played itself out. Both are let go of when the item is replaced.
+    /// What the item on the player has to say: that it won't play, that it has
+    /// played itself out, that it broke on the way. All of it is let go of
+    /// when the item is replaced.
     private var watching: [NSKeyValueObservation] = []
-    private var ended: NSObjectProtocol?
+    private var notices: [NSObjectProtocol] = []
 
     // MARK: - opening
 
@@ -175,9 +176,11 @@ final class PlayerEngine: ObservableObject {
         state = .playing
     }
 
-    /// The two things an item has to say, and the only two: it will not play —
-    /// a file that is not what its name says, or one this Mac cannot read —
-    /// and it has played itself out.
+    /// The three things an item has to say, and the only three: it will not
+    /// play — a file that is not what its name says, or one this Mac cannot
+    /// read — it has played itself out, and it started and then broke on the
+    /// way, which is news of its own and is treated as one more file that
+    /// would not open.
     private func watch(_ item: AVPlayerItem) {
         unfollow()
         watching = [
@@ -191,21 +194,28 @@ final class PlayerEngine: ObservableObject {
                 }
             }
         ]
-        ended = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.next() }
-        }
+        notices = [
+            NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.next() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.skip(item) }
+            },
+        ]
     }
 
     /// Stop listening to the item that is on its way out: a replaced item has
-    /// nothing left to say, and the notification centre would keep it for as
-    /// long as it is registered for it.
+    /// nothing left to say, and the notification centre would keep it — and
+    /// every notice about it — for as long as they are registered.
     private func unfollow() {
         for one in watching { one.invalidate() }
         watching = []
-        if let ended { NotificationCenter.default.removeObserver(ended) }
-        ended = nil
+        for notice in notices { NotificationCenter.default.removeObserver(notice) }
+        notices = []
     }
 
     /// The end of a track: the next one, or the end of the queue.
@@ -214,9 +224,10 @@ final class PlayerEngine: ObservableObject {
         play(at + 1)
     }
 
-    /// A file that would not open. Passed over for the next one, with a count
-    /// kept of how many have gone this way: the queue is walked once and not
-    /// again, however many of its files turn out not to be music.
+    /// A file that would not open, or one that started and broke. Passed over
+    /// for the next one, with a count kept of how many have gone this way: the
+    /// queue is walked once and not again, however many of its files turn out
+    /// not to be music.
     private func skip(_ item: AVPlayerItem) {
         // Whatever an item says is only its own business while it is the one
         // playing: an item replaced a moment ago says nothing about what is on
@@ -248,8 +259,8 @@ final class PlayerEngine: ObservableObject {
         note = nil
     }
 
-    /// Nothing playing any more: the item let go of, and with it the two
-    /// things that were listening to it.
+    /// Nothing playing any more: the item let go of, and with it everything
+    /// that was listening to it.
     private func stop() {
         unfollow()
         player.replaceCurrentItem(with: nil)
