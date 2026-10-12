@@ -48,10 +48,6 @@ struct SideMenu: View {
     @State private var onEdge = false
     @State private var hoveringAdd = false
 
-    @Environment(\.colorScheme) private var scheme
-
-    private var glass: Bool { scheme == .light && Transparency.allowed }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             band
@@ -67,21 +63,15 @@ struct SideMenu: View {
         .frame(width: CGFloat(span))
         .frame(maxHeight: .infinity, alignment: .top)
         // What the column is made of: the window's own surface and nothing
-        // else. In the light theme that is glass of its own — a sidebar's
-        // worth, over the same desktop — and in the dark theme it is the same
-        // near-black the rest of the window is, with a hairline between them.
-        // A column of its own colour would be a second surface in a player
-        // that is meant to be one surface.
-        .background {
-            ZStack {
-                if glass {
-                    VisualEffect(material: .sidebar, blending: .behindWindow)
-                    Color.white.opacity(0.06)
-                } else {
-                    Palette.ground
-                }
-            }
-        }
+        // else. Deliberately *not* a second pane of glass — a material laid
+        // under a material is the one thing the platform's own guidance says
+        // never to do, and it is right: two translucent layers read as fog,
+        // and the second one only blurs the first one's blur. So the column is
+        // one wash over whatever the window already is (Palette.side: a step
+        // deeper than the glass in the light theme, a step lighter than the
+        // matte in the dark), and the hairline and the shadow at its edge are
+        // what say it is a column rather than a shade.
+        .background(Palette.side)
         // The shadow it casts on what it is over, which is what says it is
         // *over* something rather than beside it.
         .shadow(color: .black.opacity(0.18), radius: 14, x: 4)

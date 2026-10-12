@@ -47,6 +47,10 @@ enum Palette {
     /// own, barely there, so that the mark over it is a mark on something and
     /// not a shape floating in the window.
     static let pane = Color(nsColor: Pair.pane)
+    /// The side menu's own step away from whatever the window is: a little
+    /// deeper than the glass in the light theme, a little lighter than the
+    /// matte in the dark — one wash, and not a second material (see Side.swift).
+    static let side = Color(nsColor: Pair.side)
     /// What is drawn on top of the accent itself — the play button's glyph.
     static let onAccent = Color(nsColor: Pair.onAccent)
 
@@ -86,6 +90,10 @@ enum Palette {
         static let wash = veil(light: (0.757, 0.329, 0.169, 0.10), dark: (0.910, 0.682, 0.549, 0.14))
         static let accent = tint(light: (0.757, 0.329, 0.169), dark: (0.910, 0.682, 0.549))
         static let pane = veil(light: (1, 1, 1, 0.34), dark: (1, 1, 1, 0.045))
+        /// One step off the ground, the way the browser's own column is: toward
+        /// the ink in both themes, which is deeper on the light side and
+        /// lighter on the dark.
+        static let side = veil(light: (0, 0, 0, 0.050), dark: (1, 1, 1, 0.045))
         static let onAccent = tint(light: (1.0, 1.0, 1.0), dark: (0.055, 0.059, 0.067))
 
         /// The pair looked up by the appearance the window is in. One
