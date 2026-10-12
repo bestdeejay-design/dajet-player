@@ -161,8 +161,9 @@ final class PlayerEngine: ObservableObject {
     private let player = AVPlayer()
     /// What was opened, in the order it arrived. Never rewritten, never
     /// reordered: this is the list the window's "of 12" counts, and the one a
-    /// dropped folder became.
-    private var queue: [URL] = []
+    /// dropped folder became. Read-only for the window, which shows it as the
+    /// list of the folder (P-06); nothing outside this file can change it.
+    @Published private(set) var queue: [URL] = []
     /// The order the pass is walked in: every place in `queue`, each of them
     /// exactly once. Straight through it is 0, 1, 2…; shuffled it is the same
     /// numbers in an order nobody could guess. Keeping it beside the queue
@@ -341,6 +342,17 @@ final class PlayerEngine: ObservableObject {
             newPass()
             play(0)
         }
+    }
+
+    /// A click on the window's list: the track at that place in `queue`, played
+    /// from its beginning at once — whether something was playing, paused, or
+    /// nothing at all. It takes the track's place in the pass being walked, so
+    /// the pass goes on from there in its own order: shuffle and repeat are left
+    /// exactly as they were, and Next after it is what Next would have been.
+    func playTrack(at index: Int) {
+        guard queue.indices.contains(index),
+              let place = order.firstIndex(of: index) else { return }
+        play(place)
     }
 
     /// The track before, and what the backward button does. Three seconds into
