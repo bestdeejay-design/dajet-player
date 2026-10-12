@@ -8,19 +8,18 @@
 
 ## Текущее состояние
 
-**v0.2.0 — знает, что играет (P-02, P-03, P-04).** Проект собирается, приложение открывается, папку или файлы можно бросить в окно — играют один за другим; плеер знает, что играет: название, исполнитель и альбом из файла, обложка размыта за окном, Next/Previous, shuffle и repeat на месте.
+**v0.3.0 — системные клавиши принадлежат ему (P-02, P-03, P-04, P-05).** Проект собирается, приложение открывается, папку или файлы можно бросить в окно — играют один за другим; плеер знает, что играет: название, исполнитель и альбом из файла, обложка размыта за окном, Next/Previous, shuffle и repeat на месте. Медиа-клавиши клавиатуры, карточка Now Playing в Control Center, тонкая полоса прогресса с перемоткой, громкость и mute (persist) — тоже его; `←`/`→` ходят по очереди рядом со Space.
 
 Нумерация релизов сверялась перед P-03 и осталась прежней; текущий тег проекта в `VERSION` — `0.1.0`.
 
 **Что есть сейчас:**
 - `Package.swift` — один executable-таргет `DajetPlayer`, macOS 14+, swift-tools 6.0, language mode 5, ноль зависимостей
-- `Sources/DajetPlayer/App.swift` — одно окно без тулбара и сайдбара; drop папок и файлов, «Open Folder…» (⌘O), Space; строка «что играет», кнопки Previous/Next, shuffle и repeat; обложка из файла — размытие вне главного потока, плавный фейд за окном
-- `Sources/DajetPlayer/PlayerEngine.swift` — очередь файлов + один `AVPlayer`: авто-переход по концу трека, пропуск битых файлов, mp3/m4a/flac/wav/aiff; метаданные (title/artist/album/artwork) читаются асинхронно из файла, имена кэшируются; Next/Previous с правилом 3 секунд; Fisher–Yates shuffle индексов без повторов в проходе; repeat off→all→one
+- `Sources/DajetPlayer/App.swift` — одно окно без тулбара и сайдбара; drop папок и файлов, «Open Folder…» (⌘O), Space, `←`/`→`; строка «что играет», кнопки Previous/Next, shuffle и repeat; обложка из файла — размытие вне главного потока, плавный фейд за окном; тонкая полоса прогресса с перемоткой по отпусканию, слайдер громкости и кнопка mute
+- `Sources/DajetPlayer/PlayerEngine.swift` — очередь файлов + один `AVPlayer`: авто-переход по концу трека, пропуск битых файлов, mp3/m4a/flac/wav/aiff; метаданные (title/artist/album/artwork) читаются асинхронно из файла, имена кэшируются; Next/Previous с правилом 3 секунд; Fisher–Yates shuffle индексов без повторов в проходе; repeat off→all→one; медиа-клавиши через `MPRemoteCommandCenter` (play/pause/play-pause/next/prev — руки на кнопки окна), карточка Now Playing через `MPNowPlayingInfoCenter` (title/artist/duration/elapsed/rate/обложка, снятие при idle), `position`/`duration`/`seek(to:)` для прогресса, громкость и mute в `UserDefaults` (читаются до первого трека)
 - `build.sh` — собирает `build/DajetPlayer.app` (`ru.dajet.player`, ad-hoc подпись, dSYM рядом)
 - Структура и скрипты — зеркало [`dajet-browser`](https://github.com/bestdeejay-design/dajet-browser)
 
 **Чего нет:**
-- Медиа-клавиш, прогресса, перемотки, громкости (и клавиш `←`/`→` — кандидаты в P-05)
 - Оформления: ни версии `dajet`, ни версии `joer`
 - Релиза: dmg, zip, appcast, Homebrew tap, иконка
 
