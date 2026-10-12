@@ -1,0 +1,18 @@
+# Build output — build.sh regenerates all of this.
+.build/
+build/
+.swiftpm/
+*.xcuserstate
+.DS_Store
+
+# Python's bytecode cache, left by the probe scripts.
+__pycache__/
+
+# Signing material that's tied to one Apple Developer account and should
+# never be committed, even though the scripts happily run without it.
+*.provisionprofile
+*.p12
+*.mobileprovision
+
+# AI draft/scratch images — not part of the product.
+other/
