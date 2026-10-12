@@ -11,7 +11,34 @@ posted as the update. What is planned but not done yet lives in
 
 ## Unreleased
 
-Nothing yet. Playback is the next wave (P-03…P-05).
+Opening music and playing it: a folder, a file, or a handful of either, dropped
+on the window or chosen from Open Folder… — played in order, one track after
+another, with Space for play and pause. Still nothing in the app but SwiftUI,
+AVFoundation and this Mac.
+
+### Added
+
+- `Sources/DajetPlayer/PlayerEngine.swift` — the queue and the one AVPlayer
+  behind it: mp3, m4a (AAC), flac, wav and aiff (and `.aif`), a folder read for
+  the music in it, its files sorted the way the Finder sorts them ("Track 2"
+  before "Track 10"), the next track as each one ends, and `idle` / `playing` /
+  `paused`. A file that will not open is passed over, and when nothing that was
+  opened plays, the player says so rather than sitting silent
+- `Sources/DajetPlayer/App.swift` — the window that takes the drop (files and
+  folders, anywhere in it), two buttons — play/pause and Open Folder…, which
+  carries ⌘O — a line saying what is playing and where it sits in what was
+  opened, and Space wired to play and pause from the moment the window opens:
+  a key monitor, so nothing has to be clicked or focused first
+- Every track played is a `file://` URL on this Mac, and nothing here will
+  take an address that could be somewhere else — "no network requests" is now
+  a property of the code, not only of the intent
+
+### Not yet
+
+- Title, artist and cover art, Next/Previous, shuffle and repeat (P-04)
+- The keyboard's media keys, progress, scrubbing and volume (P-05)
+- Both skins, the equalizer, the disk image, the ZIP, the appcast and the
+  Homebrew tap (P-06…P-09)
 
 ## 0.1.0 — 2026-10-12
 
