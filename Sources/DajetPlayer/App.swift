@@ -11,9 +11,14 @@ import UniformTypeIdentifiers
 //
 // Space plays and pauses from the moment the window opens, with nothing
 // clicked and nothing focused, and the two arrows walk the queue beside it
-// (see `watchKeys`). Everything drawn here is what it is until the design
-// waves dress it (P-06, P-07): the background is a blurred cover with a dark
-// laid over it, and there is no glass in it and nothing about it glows.
+// (see `watchKeys`).
+//
+// P-06 (the «dajet» skin, see Theme.swift) dresses it in two themes, dark and
+// light, switched from the bar and remembered between runs. The dark one is a
+// matte base with the blurred cover behind it and no glass; the light one is
+// native glass over the desktop, with no cover in it. The folder's own list of
+// tracks sits in the middle of the window: the track playing is marked, and a
+// click on a track plays it at once.
 
 @main
 struct DajetPlayerApp: App {
@@ -48,12 +53,18 @@ struct PlayerView: View {
     /// is on it. Nothing at all when nobody is touching it — the bar then
     /// shows the player's own place, which is the whole point of it.
     @State private var scrubbing: TimeInterval?
+    /// The skin that is on, kept between runs under the one key.
+    @AppStorage(Theme.key) private var themeName = Theme.dark.rawValue
+    /// The names of the tracks in the folder, read from their files as the
+    /// list needs them.
+    @StateObject private var names = TrackNames()
+
+    private var theme: Theme { Theme(rawValue: themeName) ?? .dark }
+    private var palette: Palette { Palette.of(theme) }
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 0)
             middle
-            Spacer(minLength: 0)
             bar
             // The very foot of the window, and nothing at all until there is a
             // queue: with nothing opened there is no track, no length and
@@ -62,11 +73,17 @@ struct PlayerView: View {
             if engine.count > 0 { progress }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The cover of whatever is playing, behind everything and never in
-        // front of anything: a background in the strict sense, drawn under the
-        // content and not clickable, so that neither the buttons nor the drop
-        // know it is there.
+        // The skin: the colours, the window's own colour, and the scheme the
+        // system controls draw in. Set without an animation, so that switching
+        // is a single change and not a fade through the middle.
+        .foregroundStyle(palette.text)
+        .preferredColorScheme(theme.scheme)
+        // The background, behind everything and never in front of anything: a
+        // background in the strict sense, drawn under the content and not
+        // clickable, so that neither the buttons nor the drop know it is there.
         .background { backdrop }
+        .onChange(of: engine.queue) { _, queue in names.read(queue) }
+        .onAppear { names.read(engine.queue) }
         // The window takes what the Finder can carry — a file, a folder, or a
         // handful of either — and nothing else: an address dragged in from a
         // browser is not a file URL, is not accepted, and never reaches the
@@ -96,11 +113,18 @@ struct PlayerView: View {
     /// and an idle player idle.
     private var backdrop: some View {
         ZStack {
-            // What there is when a file has no sleeve to show, and what peeks
-            // through the dark laid over one that has: a plain, dark window,
-            // not a placeholder pretending to be a cover.
-            Color(red: 0.04, green: 0.04, blue: 0.05)
-            if let artwork = engine.artwork {
+            // The light skin is glass over the desktop, and the cover of the
+            // track is not in it: the glass is the whole of its background.
+            if theme.glass {
+                LightGlass()
+            } else {
+                // The dark skin's matte base: the Dajet colour, flat, with no
+                // glass and no material in it. A window with no cover is this
+                // and nothing else.
+                Color(nsColor: palette.base)
+            }
+            WindowTone(theme: theme).frame(width: 0, height: 0)
+            if !theme.glass, let artwork = engine.artwork {
                 ZStack {
                     Image(nsImage: artwork)
                         .resizable()
@@ -132,20 +156,93 @@ struct PlayerView: View {
         .allowsHitTesting(false)
     }
 
-    /// The middle of the window, where there is nothing to look at: what it
-    /// says while nothing has been opened, and what it says while music is
-    /// being dragged in over it.
+    /// The middle of the window: the list of the folder that was opened, once
+    /// there is one; what it says while nothing has been opened; and what it
+    /// says while music is being dragged in over it, the list lying quiet
+    /// underneath for as long as that lasts.
     @ViewBuilder
     private var middle: some View {
-        Group {
+        ZStack {
+            if engine.count > 0 {
+                tracks
+            }
             if taking {
                 Text("Let go to play.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(palette.secondary)
             } else if fresh {
                 Text("Drop a folder of music, or a few files — \(PlayerEngine.kinds).")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.secondary)
             }
         }
-        .font(.system(size: 13))
-        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The folder, one line a track: its title, or its filename until the
+    /// title is read. The track that is playing is marked in the accent, and a
+    /// click on any track plays it at once. The list scrolls to the track that
+    /// is playing when the track changes, and is otherwise left where it was.
+    ///
+    /// Nothing in here is drawn per frame: the rows are lazy, so a folder of
+    /// hundreds of tracks costs what a screen of them does, at any size of
+    /// window.
+    private var tracks: some View {
+        ScrollViewReader { reader in
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(engine.queue.indices, id: \.self) { index in
+                        track(at: index)
+                            .id(index)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .onChange(of: engine.track) { _, now in
+                guard let now, let index = engine.queue.firstIndex(of: now) else { return }
+                reader.scrollTo(index)
+            }
+        }
+        // A panel of its own, with corners that are the system's own kind. In
+        // the dark skin it is a faint lift off the matte base; in the light it
+        // is a veil over the glass, and carries no border and no glow.
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(palette.panel)
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    /// One row of the folder's list.
+    private func track(at index: Int) -> some View {
+        let url = engine.queue[index]
+        let playing = engine.track == url
+        return Button {
+            engine.playTrack(at: index)
+        } label: {
+            HStack(spacing: 8) {
+                Text(names.name(of: url))
+                    .font(.system(size: 13, weight: playing ? .semibold : .regular))
+                    .foregroundStyle(playing ? palette.accent : palette.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(playing ? palette.current : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(names.name(of: url))
+        .accessibilityAddTraits(playing ? .isSelected : [])
+        .help(names.name(of: url))
     }
 
     /// Nothing has been opened yet: the middle of the window is where the
@@ -169,9 +266,9 @@ struct PlayerView: View {
         GeometryReader { room in
             ZStack(alignment: .bottomLeading) {
                 ZStack(alignment: .leading) {
-                    Rectangle().fill(Color.white.opacity(0.12))
+                    Rectangle().fill(palette.track)
                     Rectangle()
-                        .fill(Color.accentColor)
+                        .fill(palette.accent)
                         .frame(width: room.size.width * filled)
                 }
                 .frame(maxWidth: .infinity)
@@ -281,7 +378,7 @@ struct PlayerView: View {
             Button { engine.toggleMute() } label: {
                 Image(systemName: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .frame(width: 16)
-                    .foregroundStyle(engine.muted ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(engine.muted ? palette.accent : palette.secondary)
             }
             .help(engine.muted ? "Muted — click to hear it again" : "Mute")
             .accessibilityLabel("Mute")
@@ -290,6 +387,7 @@ struct PlayerView: View {
             Slider(value: loudness, in: 0...1)
                 .frame(width: 72)
                 .controlSize(.small)
+                .tint(palette.accent)
                 .help("Volume — remembered between runs")
                 .accessibilityLabel("Volume")
 
@@ -297,14 +395,14 @@ struct PlayerView: View {
 
             Text(line)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Button { engine.toggleShuffle() } label: {
                 Image(systemName: "shuffle")
                     .frame(width: 16)
-                    .foregroundStyle(engine.shuffle ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(engine.shuffle ? palette.accent : palette.secondary)
             }
             .help(engine.shuffle
                 ? "Shuffled — click to walk the queue in the order it was opened"
@@ -319,12 +417,25 @@ struct PlayerView: View {
                 Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
                     .frame(width: 16)
                     .foregroundStyle(
-                        engine.repeatMode == .off ? Color.secondary : Color.accentColor
+                        engine.repeatMode == .off ? palette.secondary : palette.accent
                     )
             }
             .help(repeatHelp)
             .accessibilityLabel("Repeat")
             .accessibilityValue(repeatSaid)
+
+            // The skin: dark or light, switched in one go and remembered. The
+            // switch is made without an animation — a fade through the middle
+            // of two skins is a flicker of its own — and the window follows it
+            // at once.
+            Button { switchTheme() } label: {
+                Image(systemName: theme == .dark ? "sun.max" : "moon")
+                    .frame(width: 16)
+                    .foregroundStyle(palette.secondary)
+            }
+            .help(theme == .dark ? "Light theme — glass over the desktop" : "Dark theme — matte")
+            .accessibilityLabel("Theme")
+            .accessibilityValue(theme == .dark ? "Dark" : "Light")
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
@@ -338,6 +449,17 @@ struct PlayerView: View {
         case .off: return "Repeat off — the queue is walked once through"
         case .all: return "Repeat the queue — a new pass when one comes to an end"
         case .one: return "Repeat this track — until Next or Previous says otherwise"
+        }
+    }
+
+    /// The skin, the other one, with no animation of any kind: the change is
+    /// made in a transaction that disables them, so the two skins swap in a
+    /// single frame. Stored under the key the next run starts from.
+    private func switchTheme() {
+        var quietly = Transaction()
+        quietly.disablesAnimations = true
+        withTransaction(quietly) {
+            themeName = theme.other.rawValue
         }
     }
 
