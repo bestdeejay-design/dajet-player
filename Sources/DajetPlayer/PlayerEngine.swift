@@ -5,6 +5,7 @@ import CoreGraphics
 import CoreImage
 import Foundation
 import ImageIO
+import MediaPlayer
 
 // The whole of the player: the files that were opened, the order they are
 // walked in, what each of them says about itself, and what happens when one of
@@ -23,8 +24,15 @@ import ImageIO
 // walked in is a list of its places, straight through by default and shuffled
 // when that is asked for, and turning shuffle off puts the places back in a
 // line without so much as touching the track that is playing. Next and
-// Previous walk the same list. The keyboard's media keys, the progress bar and
-// the volume are a later wave (P-05).
+// Previous walk the same list, whichever hand asked for them — the window's
+// buttons, the keyboard's arrows, or the Mac's own media keys, which arrive
+// through `MPRemoteCommandCenter` and are handed to those same two methods
+// rather than to a second way of walking anything. Where the track has got to
+// is a seek and nothing more (the progress bar's business in the window), and
+// what is playing is said to the system as it goes, in the same names the
+// window's line is made of (`MPNowPlayingInfoCenter`). How loud it is
+// survives the app being closed and opened again; nothing else here does, and
+// nothing here is ever a network request.
 
 /// The player, and everything it knows: where it is, what it is playing, what
 /// the file being played says about itself, and what there is to say about any
@@ -125,6 +133,28 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var shuffle = false
     @Published private(set) var repeatMode: Repeat = .off
 
+    // MARK: - how far in, and how loud
+
+    /// Where the track is, in seconds from its beginning — what the thin bar
+    /// at the foot of the window draws itself from. Kept fresh while the
+    /// music plays (see `followTheHead`), read off the player the moment it
+    /// stops, and put back to nothing when another track starts: the place
+    /// the last track had got to is not a place in this one.
+    @Published private(set) var position: TimeInterval = 0
+    /// How long the track is, in seconds, once its file has said. Nothing
+    /// played here is anything but a file on this Mac, so a length arrives a
+    /// moment after the track starts and stays; until it does, this is nought
+    /// and the bar has nothing to measure itself against.
+    @Published private(set) var duration: TimeInterval = 0
+    /// How loud, nought to one: the volume slider, and what the Mac remembers
+    /// of it between runs. The player's own volume — nothing else in the
+    /// window is heard at any other level.
+    @Published private(set) var volume: Float = 1
+    /// Whether it is heard at all. A thing of its own, standing next to the
+    /// volume rather than being a volume of nought: coming back from the mute
+    /// comes back to the volume that was set, whatever it was.
+    @Published private(set) var muted = false
+
     // MARK: - what it is doing
 
     /// The one player. Everything the window can hear comes out of it.
@@ -168,6 +198,48 @@ final class PlayerEngine: ObservableObject {
     /// when the item is replaced.
     private var watching: [NSKeyValueObservation] = []
     private var notices: [NSObjectProtocol] = []
+    /// Where the track is, kept fresh by the player's own clock: one observer,
+    /// added once, and kept here because AVFoundation asks that its observer
+    /// object be held for as long as the ticks are wanted.
+    private var ticker: Any?
+    /// The cover of the track that is playing, small and sharp, wrapped the
+    /// way the system's own Now Playing card asks for it — where the window's
+    /// background wears the same picture blurred. Nil for a file with no
+    /// cover, and nil until the reading comes back.
+    private var card: MPMediaItemArtwork?
+
+    /// The two things this app keeps between runs, kept in the plainest
+    /// drawer macOS has: the standard defaults, this app's own little corner
+    /// of them. One number and one flag, on this Mac, for this app — nothing
+    /// is sent anywhere, and nothing is written by hand.
+    private enum Remembered {
+        static let volume = "volume"
+        static let muted = "muted"
+    }
+
+    // MARK: - starting up
+
+    /// The player is made once and is the app's for as long as the app runs:
+    /// the volume and the mute are put back from the last time, the Mac's
+    /// media keys are handed the same five things the window's buttons do,
+    /// and the player's clock is asked to say where the track is while it
+    /// plays. All of it before anything is opened, so that the first track
+    /// ever played is played at the volume that was chosen for it.
+    init() {
+        let remembered = UserDefaults.standard
+        // A volume nobody has ever set is not nought: `float(forKey:)` says
+        // nought for a key that was never written, and a player that opens
+        // silent is a player that looks broken. Full, then, until told
+        // otherwise.
+        if remembered.object(forKey: Remembered.volume) != nil {
+            volume = min(max(remembered.float(forKey: Remembered.volume), 0), 1)
+        }
+        muted = remembered.bool(forKey: Remembered.muted)
+        player.volume = volume
+        player.isMuted = muted
+        hearKeys()
+        followTheHead()
+    }
 
     // MARK: - opening
 
@@ -233,9 +305,15 @@ final class PlayerEngine: ObservableObject {
         case .playing:
             player.pause()
             state = .paused
+            // Read off the player rather than waited for: the clock's next
+            // tick is up to half a second away, and a pause is not a moment
+            // to be shown half a beat behind the sound.
+            readHead()
+            announce()
         case .paused:
             player.play()
             state = .playing
+            announce()
         case .idle:
             guard !queue.isEmpty else { return }
             // A new time round: the order is drawn again — shuffled afresh,
@@ -328,6 +406,53 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// The volume slider, and everything dragging it does: the player's own
+    /// volume, and the number the next run starts from. The mute is left
+    /// exactly as it was — it is the button's business, and a hand on this
+    /// slider is a hand asking how loud, not asking to be heard.
+    func setVolume(_ value: Float) {
+        let wanted = min(max(value, 0), 1)
+        guard wanted != volume else { return }
+        volume = wanted
+        player.volume = wanted
+        UserDefaults.standard.set(wanted, forKey: Remembered.volume)
+    }
+
+    /// Mute, on and off: silence without losing the place the volume slider
+    /// was at, so that coming back from it comes back to where it was.
+    func toggleMute() {
+        muted.toggle()
+        player.isMuted = muted
+        UserDefaults.standard.set(muted, forKey: Remembered.muted)
+    }
+
+    /// The progress bar let go of: the track is taken to that place — seconds
+    /// from its beginning — and goes on from there, playing or paused as it
+    /// was. Nothing moves while a hand is on the bar; this is the one moment
+    /// a drag means anything, which is what keeps a scrub from stuttering the
+    /// sound through every place the thumb passes.
+    ///
+    /// The very end is a place the bar can be let go of, and there is nothing
+    /// special about it here: the track is taken to its end, and a track
+    /// standing at its end does what a track does at its end — it plays
+    /// itself out, and the walk along the queue decides what follows (see
+    /// `ended`), be that the next track, the pass again, this track again, or
+    /// the note that this was the last one. Nobody here reaches for `next`,
+    /// and nobody here repeats anything by hand.
+    func seek(to seconds: TimeInterval) {
+        guard player.currentItem != nil, duration > 0 else { return }
+        let wanted = min(max(seconds, 0), duration)
+        // The bar is told at once, and so is the system: the player takes a
+        // moment to land, and a playhead that lags behind the thumb is a
+        // playhead that looks stuck.
+        position = wanted
+        announce()
+        player.seek(
+            to: CMTime(seconds: wanted, preferredTimescale: 600),
+            toleranceBefore: .zero, toleranceAfter: .zero
+        )
+    }
+
     // MARK: - playing
 
     /// The track at that place in the order, from its beginning. What was
@@ -347,6 +472,11 @@ final class PlayerEngine: ObservableObject {
         track = url
         number = place + 1
         note = nil
+        // A new track starts at nothing, and its length is not known yet: the
+        // bar shows a track waiting at its beginning rather than the place
+        // the last one had got to.
+        position = 0
+        duration = 0
         sleeve(url)
         watch(item)
         if sounding {
@@ -361,6 +491,7 @@ final class PlayerEngine: ObservableObject {
             player.replaceCurrentItem(with: item)
             state = .paused
         }
+        announce()
     }
 
     /// One step along the order, and what the mode says there is to do when
@@ -408,6 +539,7 @@ final class PlayerEngine: ObservableObject {
     private func replay(sounding: Bool = true) {
         guard order.indices.contains(place) else { return done() }
         guard let item = player.currentItem else { return play(place, sounding: sounding) }
+        position = 0
         item.seek(to: .zero)
         if sounding {
             player.play()
@@ -416,6 +548,7 @@ final class PlayerEngine: ObservableObject {
             player.pause()
             state = .paused
         }
+        announce()
     }
 
     /// A new pass through the queue: the places in a line again, or shuffled
@@ -460,12 +593,23 @@ final class PlayerEngine: ObservableObject {
         unfollow()
         watching = [
             item.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard item.status == .failed else { return }
                 // KVO says nothing about which thread its news arrives on, and
                 // the player is talked to from the main one, so it is taken
                 // there.
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self?.skip(item) }
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        // An item has two things to say about its status, and
+                        // both are said once: that it is ready — which is when
+                        // the file's length becomes known, and the bar gets a
+                        // length to be dragged along — and that it will not
+                        // play at all.
+                        switch item.status {
+                        case .readyToPlay: self.ready(item)
+                        case .failed: self.skip(item)
+                        default: break
+                        }
+                    }
                 }
             }
         ]
@@ -500,6 +644,17 @@ final class PlayerEngine: ObservableObject {
         guard order.indices.contains(place) else { return done() }
         guard repeatMode != .one else { return replay() }
         advance(keepCurrentFirst: repeatMode == .all && shuffle)
+    }
+
+    /// The item is ready: its file has been read, and its length — if the file
+    /// carries one — is known from this moment on. Said to the bar, and said
+    /// to the system with everything else (see `announce`), and said again on
+    /// every tick of the clock while the track plays, because an item's
+    /// duration is allowed to go on being found and to change as it is found.
+    private func ready(_ item: AVPlayerItem) {
+        guard item === player.currentItem else { return }
+        measure()
+        announce()
     }
 
     /// A file that would not open, or one that started and broke. Passed over
@@ -560,6 +715,183 @@ final class PlayerEngine: ObservableObject {
         album = nil
         artwork = nil
         artworkToken += 1
+        card = nil
+        position = 0
+        duration = 0
+        // Nothing is playing, and the system is told so twice over: the card
+        // is taken down, and the state with it (see `announce`).
+        announce()
+    }
+
+    // MARK: - the Mac's own controls
+
+    /// The five things the Mac's media keys can ask for, each of them already
+    /// something the window can do: play, pause, play or pause, the next
+    /// track, the one before. Nothing here is a second way to play anything —
+    /// the keys are handed the window's own handles.
+    private enum Key {
+        case play
+        case pause
+        case playPause
+        case next
+        case previous
+    }
+
+    /// The Mac's media keys — the keyboard's, the headphones', the ones on
+    /// the lock screen and in Control Center — registered once, for the life
+    /// of the player, which is the life of the app. They are the system's own
+    /// events and arrive through `MPRemoteCommandCenter`; the window's Space
+    /// and its two arrows are separate keys and stay separate, which is the
+    /// division of labour the system asks of an app that wants both.
+    ///
+    /// The commands are enabled explicitly: a command this app means to
+    /// answer should not be left to whatever a default happens to be.
+    private func hearKeys() {
+        let center = MPRemoteCommandCenter.shared()
+        let keys: [(MPRemoteCommand, Key)] = [
+            (center.playCommand, .play),
+            (center.pauseCommand, .pause),
+            (center.togglePlayPauseCommand, .playPause),
+            (center.nextTrackCommand, .next),
+            (center.previousTrackCommand, .previous),
+        ]
+        for (command, key) in keys {
+            command.isEnabled = true
+            command.addTarget { [weak self] _ in
+                guard let self else { return .commandFailed }
+                return self.mediaKey(key)
+            }
+        }
+    }
+
+    /// One media key, walked over on the main thread whichever thread the
+    /// system asked on: the player lives on this one, and the system is owed
+    /// an answer before it is done with the key, so a thread that is not the
+    /// main one waits here for the main one to take it. (The other way round
+    /// never happens: nothing on the main thread ever waits on this.)
+    private nonisolated func mediaKey(_ key: Key) -> MPRemoteCommandHandlerStatus {
+        var verdict: MPRemoteCommandHandlerStatus = .commandFailed
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { verdict = apply(key) }
+        } else {
+            DispatchQueue.main.sync { MainActor.assumeIsolated { verdict = apply(key) } }
+        }
+        return verdict
+    }
+
+    /// What one press of a media key does, and whether it was done: `.success`
+    /// so that nothing anywhere flashes an error at the listener, and
+    /// `.commandFailed` when there was nothing to do it to. Play and pause ask
+    /// for a state rather than for a change — a player already playing is not
+    /// paused by a play key, and one already paused is at peace with a pause
+    /// key; both are answers, and both are successful ones. Play/pause is the
+    /// switch it is called, and from nothing playing it begins the queue, as
+    /// Space always has.
+    private func apply(_ key: Key) -> MPRemoteCommandHandlerStatus {
+        guard !queue.isEmpty else { return .commandFailed }
+        switch key {
+        case .play:
+            if state != .playing { toggle() }
+            return .success
+        case .pause:
+            // Nothing playing is nothing to pause, and a key that starts the
+            // music is not a pause key: the queue is left exactly as it was.
+            guard state != .idle else { return .commandFailed }
+            if state == .playing { toggle() }
+            return .success
+        case .playPause:
+            toggle()
+            return .success
+        case .next:
+            next()
+            return .success
+        case .previous:
+            previous()
+            return .success
+        }
+    }
+
+    /// What the Mac is told about what is playing, in the same names the
+    /// window's line is made of: the title — the file's own name standing in
+    /// for one the file never gave, exactly as on the line — the artist when
+    /// there is one, how long the track is, where in it the player is, and
+    /// whether it is going or waiting. The cover goes with it, small and
+    /// sharp, for the system's own card. Nothing playing, and the whole of it
+    /// is taken down: an app with nothing to play has no business on the lock
+    /// screen.
+    ///
+    /// The rate in the dictionary is what the system reads its play/pause
+    /// button from; the state beside it is the half of the answer macOS wants
+    /// set for the remote controls to work at all (see the framework's own
+    /// words on `MPNowPlayingInfoCenter`). Both are written every time this
+    /// is called, and it is called on everything worth telling: a track, a
+    /// name, a play, a pause, a seek, and every half-second of the music
+    /// going by.
+    private func announce() {
+        let center = MPNowPlayingInfoCenter.default()
+        guard let url = track else {
+            center.nowPlayingInfo = nil
+            center.playbackState = .stopped
+            return
+        }
+        var said: [String: Any] = [
+            MPMediaItemPropertyTitle: title ?? url.lastPathComponent,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+            MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1.0 : 0.0,
+        ]
+        if let artist { said[MPMediaItemPropertyArtist] = artist }
+        if duration > 0 { said[MPMediaItemPropertyPlaybackDuration] = duration }
+        if let card { said[MPMediaItemPropertyArtwork] = card }
+        center.nowPlayingInfo = said
+        center.playbackState = state == .playing ? .playing : .paused
+    }
+
+    /// Where the track is, kept fresh by the player's own clock rather than by
+    /// a timer reading the player out in a loop. Half a second is often
+    /// enough for a thin line at the foot of a window and slow enough to cost
+    /// nothing; the ticks come only while there is playing to do, so a paused
+    /// or idle player costs nothing at all, which is half of what "quiet"
+    /// means. One observer, added once, for as long as the player — which is
+    /// as long as the app: AVFoundation asks that an observer object be held
+    /// for as long as its ticks are wanted, and this one is never done with.
+    private func followTheHead() {
+        ticker = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
+        ) { [weak self] time in
+            MainActor.assumeIsolated { self?.moved(time) }
+        }
+    }
+
+    /// One beat of that clock: where the head is, how long the track is, and
+    /// what the system is told about both. Only while the music is going —
+    /// the same clock is asked once more when a seek lands or an item is
+    /// replaced, and neither of those is news about where the track has got
+    /// to.
+    private func moved(_ time: CMTime) {
+        guard state == .playing, player.currentItem != nil else { return }
+        let head = time.seconds
+        if time.isNumeric, head.isFinite { position = max(0, head) }
+        measure()
+        announce()
+    }
+
+    /// How long the track is, as soon as its file can say. An item's duration
+    /// is indefinite until it has been read and is allowed to go on changing
+    /// afterwards, so this is asked again on every tick rather than once. A
+    /// track that cannot say leaves the bar with nothing to measure itself
+    /// against, which is the bar's business to show and not this one's.
+    private func measure() {
+        guard let span = player.currentItem?.duration.seconds,
+              span.isFinite, span > 0 else { return }
+        if duration != span { duration = span }
+    }
+
+    /// Where the player actually is, read off it rather than waited for: what
+    /// the bar is put back to the moment the music stops.
+    private func readHead() {
+        let head = player.currentTime().seconds
+        guard head.isFinite, head >= 0 else { return }
+        position = head
     }
 
     // MARK: - what a file says about itself
@@ -588,6 +920,9 @@ final class PlayerEngine: ObservableObject {
             album = nil
         }
         reading?.cancel()
+        // The last track's cover is not this track's cover: the system's card
+        // waits without a picture until this file's tags have been read.
+        card = nil
         reading = Task.detached(priority: .userInitiated) { [weak self] in
             let found = await Sleeves.read(url, keeping: known)
             guard !Task.isCancelled else { return }
@@ -609,19 +944,41 @@ final class PlayerEngine: ObservableObject {
         title = sleeve.title
         artist = sleeve.artist
         album = sleeve.album
-        // Kept without its picture, for the reason given where it is stored.
+        // Kept without its pictures, for the reason given where it is stored:
+        // three words apiece are nothing to keep for a whole folder, and a
+        // picture apiece would be a great deal of memory held for tracks that
+        // are not playing.
         var kept = sleeve
         kept.artwork = nil
+        kept.cover = nil
         said[url] = kept
-        // AppKit's image is made here, on the main thread; the immutable
-        // bitmap was made and blurred on the queue that read the file.
+        // AppKit's images are made here, on the main thread; the immutable
+        // bitmaps were made — and one of them blurred — on the queue that read
+        // the file.
         artwork = sleeve.artwork.map {
             NSImage(cgImage: $0, size: CGSize(width: CGFloat($0.width), height: CGFloat($0.height)))
         }
+        // The same picture as it is, for the places outside this window: the
+        // Mac's own Now Playing card, which is shown small and is not helped
+        // by the blur the background here wears.
+        card = sleeve.cover.map(show)
         // The picture, whether there is one or not: a track with a cover of
         // its own fades the last one out from under it, and a track with none
-        // fades the background away and leaves the window the dark it was.
+        // fades the background away and leaves the window the dark it was —
+        // and the Mac is told either way, so that a cover arriving reaches
+        // Control Center as well as this window.
         artworkToken += 1
+        announce()
+    }
+
+    /// The cover as the system's card asks for it: the small, sharp bitmap in
+    /// an `NSImage`, wrapped so that the system may ask for it at whichever
+    /// size it is about to draw — the picture is already small enough for any
+    /// of them, and the request handler hands back the same one every time.
+    private func show(_ cover: CGImage) -> MPMediaItemArtwork {
+        let size = CGSize(width: CGFloat(cover.width), height: CGFloat(cover.height))
+        let picture = NSImage(cgImage: cover, size: size)
+        return MPMediaItemArtwork(boundsSize: size) { _ in picture }
     }
 }
 
@@ -636,7 +993,13 @@ private struct Sleeve: @unchecked Sendable {
     var title: String?
     var artist: String?
     var album: String?
+    /// The cover as the window wears it: small, and already blurred — made
+    /// once, on the queue that read the file, and never touched again.
     var artwork: CGImage?
+    /// The same cover as it is: just as small, not blurred, and kept nowhere
+    /// but for the track that is playing — what the Mac's own Now Playing
+    /// card is shown from.
+    var cover: CGImage?
 }
 
 /// The reading of a file's tags, and the making of its cover into a
@@ -649,10 +1012,11 @@ private struct Sleeve: @unchecked Sendable {
 private enum Sleeves {
 
     /// The longest side of the picture that is made. A cover is a few hundred
-    /// pixels to begin with, and what the window wants of it is a wash of
-    /// colour behind everything, so there is nothing to be had by blurring a
-    /// bigger one: this bounds the work whatever a file happens to hold, and
-    /// stretching a small picture costs the same at any size of window.
+    /// pixels to begin with; the window wants a wash of colour behind
+    /// everything and the system's card wants something small to show in a
+    /// corner, and neither of them is served by a bigger one. This bounds the
+    /// work whatever a file happens to hold, and stretching a small picture
+    /// costs the same at any size of window.
     private static let side: CGFloat = 640
 
     /// How soft, in the small picture — and stretched with it, so what the
@@ -705,8 +1069,13 @@ private enum Sleeves {
                     sleeve.album = name(try? await item.load(.stringValue))
                 }
             case .commonKeyArtwork:
-                if sleeve.artwork == nil, let data = try? await item.load(.dataValue) {
-                    sleeve.artwork = backdrop(data)
+                // One reading of the file's bytes, two pictures out of it: the
+                // sharp one for the system's card, the blurred one for the
+                // window.
+                if sleeve.cover == nil, let data = try? await item.load(.dataValue) {
+                    let cover = picture(data)
+                    sleeve.cover = cover
+                    sleeve.artwork = cover.flatMap(softened)
                 }
             default:
                 continue
@@ -725,18 +1094,13 @@ private enum Sleeves {
         return name
     }
 
-    /// The cover as a background: drawn down, blurred once, and never touched
-    /// again.
-    ///
-    /// What the window does with the result is stretch one small bitmap, which
-    /// is the same cheap work whatever the size of the window and no work at
-    /// all while the window is left alone — so the blur is here, once for the
-    /// whole life of a track, rather than something the drawing does every
-    /// frame.
-    private static func backdrop(_ data: Data) -> CGImage? {
-        // ImageIO makes a thumbnail straight from the file's data, instead of
-        // first decoding a needlessly enormous cover and shrinking it after.
-        // The largest bitmap Core Image ever sees is 640 pixels on a side.
+    /// The cover as a small bitmap, straight from the bytes the file holds:
+    /// ImageIO makes a thumbnail rather than decoding a needlessly enormous
+    /// cover and shrinking it after, and the largest bitmap anything here
+    /// ever sees is 640 pixels on a side. This is the picture the whole
+    /// reading works from — the window is shown it blurred, the system's card
+    /// as it is.
+    private static func picture(_ data: Data) -> CGImage? {
         let options: [CFString: Any] = [
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -749,7 +1113,19 @@ private enum Sleeves {
                 sourceFile, 0, options as CFDictionary
               ),
               source.width > 0, source.height > 0 else { return nil }
-        let sourceImage = CIImage(cgImage: source)
+        return source
+    }
+
+    /// That small bitmap as a background: blurred once, and never touched
+    /// again.
+    ///
+    /// What the window does with the result is stretch one small bitmap, which
+    /// is the same cheap work whatever the size of the window and no work at
+    /// all while the window is left alone — so the blur is here, once for the
+    /// whole life of a track, rather than something the drawing does every
+    /// frame.
+    private static func softened(_ cover: CGImage) -> CGImage? {
+        let sourceImage = CIImage(cgImage: cover)
         guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
         // Held out past its own edges first, so that what the blur smears into
         // the borders is the picture, and not a transparency that would leave

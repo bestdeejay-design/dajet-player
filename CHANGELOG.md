@@ -15,8 +15,12 @@ Opening music and playing it: a folder, a file, or a handful of either, dropped
 on the window or chosen from Open Folder… — played in order, one track after
 another, with its title, artist and album from the file, and its cover behind
 the window when it has one. Next, Previous, shuffle and repeat for the queue;
-Space still plays and pauses. Still only Apple's frameworks and this Mac,
-with nothing third-party.
+Space still plays and pauses, the two arrows walk the queue beside it, and the
+Mac's own media keys and Now Playing card are the app's as well. A thin bar
+along the foot of the window shows how far into the track the player is, and
+takes it to another place when dragged; a volume slider and a mute button sit
+in the bar, and both are remembered between runs. Still only Apple's
+frameworks and this Mac, with nothing third-party.
 
 ### Added
 
@@ -42,13 +46,27 @@ with nothing third-party.
   pictures are read from that file — nothing here will take an address that
   could be somewhere else. "No network requests" is a property of the code,
   not only of the intent
+- `Sources/DajetPlayer/PlayerEngine.swift` — the Mac's own controls, all of
+  them hands on the buttons that were already there: the media keys (play,
+  pause, play/pause, next and previous) through `MPRemoteCommandCenter`, with
+  `.success` and `.commandFailed` answered honestly — play and pause ask for a
+  state rather than for a change, so a play key never pauses; the Now Playing
+  card in Control Center and on the lock screen through `MPNowPlayingInfoCenter`
+  — title (the filename when the file gave none), artist, duration, elapsed
+  time, playback rate and the cover, taken down whenever nothing is playing;
+  position and duration published for the progress bar, and `seek(to:)` behind
+  it (the very end included: the track is taken there and plays itself out, so
+  the queue's own rules decide what follows); volume and mute, saved in
+  `UserDefaults` and put back into the player before the first track of the
+  next run
+- `Sources/DajetPlayer/App.swift` — the thin progress bar along the foot of the
+  window: no numbers, the line is the whole of what it says, a drag moves the
+  line and not the music, and the track is taken to the place the hand lets go
+  of; a volume slider and a mute button in the bar (both remembered between
+  runs), and the `←` / `→` keys added to the key monitor that already had Space
 
 ### Not yet
 
-- The `←` / `→` shortcuts named in the acceptance criteria for P-04. They were
-  left out pending the coordinator's decision on whether they belong in this
-  wave; the Previous and Next buttons are present
-- The keyboard's media keys, progress, scrubbing and volume (P-05)
 - Both skins, the equalizer, the disk image, the ZIP, the appcast and the
   Homebrew tap (P-06…P-09)
 
