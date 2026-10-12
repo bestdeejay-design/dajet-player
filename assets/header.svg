@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="290" viewBox="0 0 1200 290" role="img" aria-label="Dajet Player — Silence, playing. A quiet music player for macOS.">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#15181C">
+        <animate attributeName="stop-color" values="#15181C;#E8AE8C;#15181C" dur="8s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#E8AE8C">
+        <animate attributeName="stop-color" values="#E8AE8C;#15181C;#E8AE8C" dur="8s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <mask id="wave">
+      <rect width="1200" height="290" fill="#FFFFFF"/>
+      <path fill="#000000" d="M0,290 L0,236 Q150,214 400,236 T800,236 T1200,236 L1200,290 Z">
+        <animate attributeName="d" dur="6s" repeatCount="indefinite" begin="-3.6s"
+          keyTimes="0;0.333;0.667;1" calcMode="spline" keySplines="0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1"
+          values="M0,290 L0,236 Q150,214 400,236 T800,236 T1200,236 L1200,290 Z;M0,290 L0,242 Q150,222 400,242 T800,242 T1200,242 L1200,290 Z;M0,290 L0,230 Q150,206 400,230 T800,230 T1200,230 L1200,290 Z;M0,290 L0,236 Q150,214 400,236 T800,236 T1200,236 L1200,290 Z"/>
+      </path>
+    </mask>
+    <linearGradient id="flash" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1200" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="44%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="48%" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.25"/>
+      <stop offset="52%" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="56%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="65%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <g mask="url(#wave)">
+    <rect width="1200" height="290" fill="#0D1117"/>
+    <rect width="1200" height="290" fill="url(#bg)" opacity="0.78"/>
+
+    <rect width="1200" height="290" fill="url(#flash)">
+      <animateTransform attributeName="transform" type="translate" values="-600,0;-600,0;600,0;600,0" keyTimes="0;0.05;0.28;1" dur="16s" calcMode="linear" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0;1;1;1;0;0" keyTimes="0;0.03;0.05;0.28;0.35;1" dur="16s" repeatCount="indefinite"/>
+    </rect>
+
+    <path fill="#FFFFFF" opacity="0.25" d="M0,290 L0,226 Q200,204 500,226 T1000,226 T1200,226 L1200,290 Z">
+      <animate attributeName="d" dur="6s" repeatCount="indefinite" begin="-1.8s"
+        keyTimes="0;0.333;0.667;1" calcMode="spline" keySplines="0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1"
+        values="M0,290 L0,226 Q200,204 500,226 T1000,226 T1200,226 L1200,290 Z;M0,290 L0,232 Q200,214 500,232 T1000,232 T1200,232 L1200,290 Z;M0,290 L0,220 Q200,194 500,220 T1000,220 T1200,220 L1200,290 Z;M0,290 L0,226 Q200,204 500,226 T1000,226 T1200,226 L1200,290 Z"/>
+    </path>
+    <path fill="#FFFFFF" opacity="0.5" d="M0,290 L0,214 Q150,192 300,214 T600,214 T900,214 T1200,214 L1200,290 Z">
+      <animate attributeName="d" dur="6s" repeatCount="indefinite" begin="0s"
+        keyTimes="0;0.333;0.667;1" calcMode="spline" keySplines="0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1"
+        values="M0,290 L0,214 Q150,192 300,214 T600,214 T900,214 T1200,214 L1200,290 Z;M0,290 L0,222 Q150,204 300,222 T600,222 T900,222 T1200,222 L1200,290 Z;M0,290 L0,206 Q150,180 300,206 T600,206 T900,206 T1200,206 L1200,290 Z;M0,290 L0,214 Q150,192 300,214 T600,214 T900,214 T1200,214 L1200,290 Z"/>
+    </path>
+
+    <g>
+      <animate attributeName="opacity" values="0;1" dur="1.5s" fill="freeze"/>
+      <text x="602" y="105" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-size="48" font-weight="bold" fill="#000000" opacity="0.28" text-anchor="middle">Dajet Player</text>
+      <text x="600" y="103" font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-size="48" font-weight="bold" fill="#FFFFFF" text-anchor="middle">Dajet Player</text>
+    </g>
+
+    <g>
+      <animate attributeName="opacity" values="0;1" dur="1.5s" begin="0.5s" fill="freeze"/>
+      <text x="602" y="162" font-family="'Helvetica Neue',Arial,sans-serif" font-size="26" fill="#000000" opacity="0.30" text-anchor="middle">Silence, playing. A quiet music player for macOS.</text>
+      <text x="600" y="160" font-family="'Helvetica Neue',Arial,sans-serif" font-size="26" fill="#FFFFFF" opacity="0.95" text-anchor="middle">Silence, playing. A quiet music player for macOS.</text>
+    </g>
+  </g>
+</svg>
