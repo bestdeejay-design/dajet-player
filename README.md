@@ -4,15 +4,15 @@
 
 **Silence, playing.** — a quiet music player for macOS. Native Swift · MIT · free.
 
-Open Dajet Player. A window. That is all of it, for now.
+Open Dajet Player. Drop a folder of music on it — it plays, in the order the Finder lists it. That is all there is to it, for now.
 
 **🌐 Versions:** [English](README.md) · [Русский](README.ru.md)
 
 ## Where it is
 
-**v0.1.0 — the skeleton.** The project builds with SwiftPM and `./build.sh`, and what they make opens as an ordinary Mac app: one window, no toolbar, no sidebar, nothing in it yet.
+**v0.1.0 — plays.** The project builds with SwiftPM and `./build.sh`, and what they make opens as an ordinary Mac app: one window, no toolbar, no sidebar, nothing but a Play button, an Open Folder… button and one line. Drop a folder of music — or a few files, mp3, m4a, flac, wav, aiff — and it plays them one after another. Space stops it and starts it again.
 
-Nothing plays. Opening a file, metadata, cover art and the keyboard's media keys are the waves that follow; the queue is in [ROADMAP.md](ROADMAP.md).
+Cover art, shuffle and the keyboard's media keys are the waves that follow; the queue is in [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -26,10 +26,10 @@ Launch it, open Network Monitor — zero connections. Nothing leaves the machine
 
 ## What it can
 
-Nothing yet, and this step says so rather than pretending otherwise. What is coming, in order:
+**P-03 — play what was dropped.** A folder or a handful of files: they play, one after another, in the order they were dropped; a file that will not open is passed over, and the player says so when nothing plays at all. That is all this step does, and it says so rather than pretending otherwise. What is coming, in order:
 
-- **P-03** — open a file and play it; one window, one track, nothing else
 - **P-04** — title, artist and cover art, Next/Previous, shuffle and repeat
+- **P-05** — the keyboard's media keys, a progress bar you can drag, volume that stays where you left it
 - **P-05** — the keyboard's media keys, a progress bar you can drag, volume that stays where you left it
 - **after that** — the two skins, the equalizer, the disk image and the Homebrew tap (P-06…P-09)
 
