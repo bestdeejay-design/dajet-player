@@ -2,16 +2,18 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// The window: a row of small buttons, one line, and everywhere else somewhere
-// to drop music on — with the cover of whatever is playing behind all of it,
-// when the file has a cover to show. No toolbar, no sidebar, no list of what
-// is queued: the queue is what was dropped, and it plays.
+// The window: a row of small buttons, one line, how loud it is, a thin bar
+// along the foot saying how far into the track the player is, and everywhere
+// else somewhere to drop music on — with the cover of whatever is playing
+// behind all of it, when the file has a cover to show. No toolbar, no
+// sidebar, no list of what is queued: the queue is what was dropped, and it
+// plays.
 //
 // Space plays and pauses from the moment the window opens, with nothing
-// clicked and nothing focused (see `watchKeys`). Everything drawn here is what
-// it is until the design waves dress it (P-06, P-07): the background is a
-// blurred cover with a dark laid over it, and there is no glass in it and
-// nothing about it glows.
+// clicked and nothing focused, and the two arrows walk the queue beside it
+// (see `watchKeys`). Everything drawn here is what it is until the design
+// waves dress it (P-06, P-07): the background is a blurred cover with a dark
+// laid over it, and there is no glass in it and nothing about it glows.
 
 @main
 struct DajetPlayerApp: App {
@@ -36,11 +38,16 @@ struct DajetPlayerApp: App {
 struct PlayerView: View {
     @ObservedObject var engine: PlayerEngine
 
-    /// The key monitor that gives the window Space, for as long as it is open.
+    /// The key monitor that gives the window Space and the two arrows, for as
+    /// long as it is open.
     @State private var keys: Any?
     /// Something is being dragged over the window, and the middle of it says
     /// so while that lasts.
     @State private var taking = false
+    /// Where a hand has the progress bar, in seconds into the track, while it
+    /// is on it. Nothing at all when nobody is touching it — the bar then
+    /// shows the player's own place, which is the whole point of it.
+    @State private var scrubbing: TimeInterval?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +55,11 @@ struct PlayerView: View {
             middle
             Spacer(minLength: 0)
             bar
+            // The very foot of the window, and nothing at all until there is a
+            // queue: with nothing opened there is no track, no length and
+            // nowhere to take anything to, and a bar with nothing to say is
+            // not drawn.
+            if engine.count > 0 { progress }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The cover of whatever is playing, behind everything and never in
@@ -142,8 +154,85 @@ struct PlayerView: View {
         engine.state == .idle && engine.count == 0 && engine.note == nil
     }
 
+    /// The thin bar along the foot of the window: how far into the track the
+    /// player is, and where a hand can take it to. No numbers — the line is
+    /// the whole of what it says, which is what a player this quiet wants of a
+    /// bar.
+    ///
+    /// While a hand is on it the line follows the hand and the music does not
+    /// move one bit: a drag that dragged the sound along would stutter the
+    /// track through every place the thumb passed. Let go, and the track is
+    /// taken to that place (see the engine's `seek`), playing or paused as it
+    /// was. A plain click is the same thing — a drag of no length, let go of
+    /// at once.
+    private var progress: some View {
+        GeometryReader { room in
+            ZStack(alignment: .bottomLeading) {
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.white.opacity(0.12))
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: room.size.width * filled)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 3)
+            }
+            // The line is thin; the place to put a hand on it is not: the
+            // whole strip answers the drag, and the line is drawn at the foot
+            // of it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .contentShape(Rectangle())
+            .gesture(hold(along: room.size.width))
+        }
+        .frame(height: 11)
+        // Nowhere to take the track and there is nothing to drag: a track
+        // whose file has not said how long it is leaves the bar drawn but
+        // still, rather than one that jumps about over a length nobody knows.
+        .opacity(scrubbable ? 1 : 0.35)
+        .allowsHitTesting(scrubbable)
+        .accessibilityElement()
+        .accessibilityLabel("Progress")
+        .accessibilityValue("\(Int((filled * 100).rounded())) percent")
+    }
+
+    /// How far into the track the bar draws itself, from nought to one: where
+    /// a hand has it while one is on it, and where the player is otherwise.
+    private var filled: Double {
+        let span = engine.duration
+        guard span > 0 else { return 0 }
+        return min(max((scrubbing ?? engine.position) / span, 0), 1)
+    }
+
+    /// Whether there is anywhere on the bar to take the track to: something
+    /// playing or waiting, and a file that has said how long it is.
+    private var scrubbable: Bool {
+        engine.duration > 0 && engine.state != .idle
+    }
+
+    /// The hand on the bar. Barely any movement is a drag as well — a
+    /// `minimumDistance` of nothing — so that a click on the bar is a click on
+    /// a place in the track, which is what anyone clicking a bar means.
+    private func hold(along width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { hand in
+                guard width > 0 else { return }
+                scrubbing = seconds(at: hand.location.x, along: width)
+            }
+            .onEnded { hand in
+                let landed = scrubbing ?? seconds(at: hand.location.x, along: width)
+                scrubbing = nil
+                engine.seek(to: landed)
+            }
+    }
+
+    /// Where on the bar a hand is, said in seconds into the track.
+    private func seconds(at x: CGFloat, along width: CGFloat) -> TimeInterval {
+        guard width > 0 else { return 0 }
+        return min(max(x / width, 0), 1) * engine.duration
+    }
+
     /// The foot of the window: the buttons, and the line that says what is
-    /// playing.
+    /// playing, how loud it is, and where the player can be taken.
     ///
     /// Two buttons were here before — to open something, and to start it or
     /// stop it for a while — and two more walk the queue in front of them,
@@ -184,6 +273,25 @@ struct PlayerView: View {
             Button("Open Folder…") { choose() }
                 .keyboardShortcut("o")
                 .help("Play every track in a folder, in order")
+
+            // How loud, and whether at all: the volume is the player's own
+            // and is remembered between runs, and the mute stands beside it
+            // rather than being a volume of nought — the button gives back the
+            // volume the slider is at, whatever that was.
+            Button { engine.toggleMute() } label: {
+                Image(systemName: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 16)
+                    .foregroundStyle(engine.muted ? Color.accentColor : Color.secondary)
+            }
+            .help(engine.muted ? "Muted — click to hear it again" : "Mute")
+            .accessibilityLabel("Mute")
+            .accessibilityValue(engine.muted ? "On" : "Off")
+
+            Slider(value: loudness, in: 0...1)
+                .frame(width: 72)
+                .controlSize(.small)
+                .help("Volume — remembered between runs")
+                .accessibilityLabel("Volume")
 
             Spacer(minLength: 12)
 
@@ -231,6 +339,13 @@ struct PlayerView: View {
         case .all: return "Repeat the queue — a new pass when one comes to an end"
         case .one: return "Repeat this track — until Next or Previous says otherwise"
         }
+    }
+
+    /// The volume slider's two directions: where the player is, and where a
+    /// hand dragging it asks the player to be. The engine owns the volume —
+    /// it is the thing that is heard, and the thing that remembers.
+    private var loudness: Binding<Float> {
+        Binding(get: { engine.volume }, set: { engine.setVolume($0) })
     }
 
     /// The same three states, for anyone listening rather than looking.
@@ -316,30 +431,53 @@ struct PlayerView: View {
 
     // MARK: - the keyboard
 
-    /// Space, anywhere in the window, from the moment it opens: nothing has to
-    /// be clicked, and nothing has to have the keyboard for it. A view that
-    /// asked SwiftUI for the key would be given it only while it was focused,
-    /// and Space is the one key a player has to hear whatever else is going
-    /// on. A local monitor hears it before anything else in this app does, and
-    /// swallows it — so the button that happens to be focused isn't pressed
-    /// along with it, and nothing beeps.
+    /// The three keys the player takes from the keyboard — Space and the two
+    /// arrows — anywhere in the window, from the moment it opens: nothing has
+    /// to be clicked, and nothing has to have the keyboard for it. A view that
+    /// asked SwiftUI for a key would be given it only while it was focused,
+    /// and these are the keys a player has to hear whatever else is going on.
+    /// A local monitor hears them before anything else in this app does, and
+    /// swallows them — so the button that happens to be focused isn't pressed
+    /// along with them, and nothing beeps.
+    ///
+    /// The keys are told apart by their code rather than by the characters
+    /// they would have made, because these three are places on the keyboard
+    /// and not letters: a layout that moves the letters about leaves space
+    /// where it was, the left arrow on the left and the right one on the
+    /// right. Up and down are left alone — they are the system's, and this app
+    /// has nothing to say about them. The Mac's own media keys are not here
+    /// and never will be: the system hands those to the app through
+    /// `MPRemoteCommandCenter` (the engine's business), and a second monitor
+    /// listening for them would be a second way to play the same thing.
     private func watchKeys() {
         guard keys == nil else { return }
         let engine = engine
         keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Space is a space in the folder panel, not a pause: that panel is
-            // this app's too, and its keys are its own.
+            // Nothing here is a key in the folder panel: that panel is this
+            // app's too, and its keys are its own.
             guard !(event.window is NSPanel) else { return event }
-            // Bare space, and one press at a time: a modifier makes it another
-            // key entirely, and a held key repeats — this one would start and
-            // stop the music as fast as the keyboard could say so.
+            // Bare keys, and one press at a time: a modifier makes a key into
+            // another key entirely, and a held key repeats — a player walked
+            // by a held arrow would fly through the queue as fast as the
+            // keyboard could say so, and a held space would start and stop the
+            // music just as fast.
             let borrowed: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
-            guard event.charactersIgnoringModifiers == " ",
-                  event.modifierFlags.isDisjoint(with: borrowed),
-                  !event.isARepeat
-            else { return event }
-            MainActor.assumeIsolated { engine.toggle() }
-            return nil
+            guard event.modifierFlags.isDisjoint(with: borrowed), !event.isARepeat else {
+                return event
+            }
+            switch event.keyCode {
+            case 49:    // space, the one key a player cannot do without
+                MainActor.assumeIsolated { engine.toggle() }
+                return nil
+            case 123:   // left: this track again, or the one before it
+                MainActor.assumeIsolated { engine.previous() }
+                return nil
+            case 124:   // right: the next track
+                MainActor.assumeIsolated { engine.next() }
+                return nil
+            default:
+                return event
+            }
         }
     }
 }
