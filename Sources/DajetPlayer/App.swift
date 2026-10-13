@@ -58,13 +58,14 @@ struct DajetPlayerApp: App {
         // The look that was chosen last time, put on the app before the window
         // is drawn: opening in the Mac's appearance and changing a moment
         // later is a window that looks like it fell over.
+        AppearancePreferences.prepare()
         let remembered = Theme.remembered
         DispatchQueue.main.async { remembered.apply() }
     }
 
     var body: some Scene {
         Window("Dajet Player", id: PlayerView.windowID) {
-            PlayerView(engine: tray.engine, playlists: tray.playlists)
+            PlayerView(engine: tray.engine, playlists: tray.playlists, presentation: tray.presentation)
                 // A formal square, and the column's own resting width: the
                 // window is never smaller than the side menu is wide, and never
                 // narrower than it is tall (P-10). What the player needs to be
@@ -78,7 +79,8 @@ struct DajetPlayerApp: App {
         // transparent, so the glass underneath is the glass of the whole window
         // rather than of everything below a bar (see Window.swift).
         .windowToolbarStyle(.unified(showsTitle: false))
-        .defaultSize(width: 560, height: 420)
+        .defaultSize(width: WindowTemplate.initialContentSize.width,
+                     height: WindowTemplate.initialContentSize.height)
         // The one thing the menu bar has to offer that the window does not
         // already show all the time: a folder. ⌘O is the menu's and only the
         // menu's — a shortcut on a button that is not on screen is no shortcut
@@ -102,6 +104,7 @@ struct PlayerView: View {
 
     @ObservedObject var engine: PlayerEngine
     @ObservedObject var playlists: Playlists
+    @ObservedObject var presentation: Presentation
 
     /// The look that is on, kept between runs under the one key.
     @AppStorage(Theme.key) private var lookName = Theme.system.rawValue
@@ -109,7 +112,10 @@ struct PlayerView: View {
     @AppStorage("sideWidth") private var sideSpan = Double(Metrics.side)
     /// Whether the side menu is out, and how far a hand has pulled it while
     /// one is on the window's edge.
-    @State private var menu = false
+    private var menu: Bool {
+        get { presentation.sideOpen }
+        nonmutating set { presentation.sideOpen = newValue }
+    }
     @State private var pull: CGFloat = 0
     /// A number that goes up when the menu's lists are out of date — it has
     /// just come out, or a folder has just been added.
@@ -130,6 +136,7 @@ struct PlayerView: View {
     @State private var hoveringPlay = false
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// SwiftUI's own way of asking for this window back, which is what the tray
     /// does when the window has been closed and there is nothing among the
     /// app's windows to bring forward.
@@ -141,7 +148,7 @@ struct PlayerView: View {
             // included.
             Surface()
             // The window itself, told what the surface is.
-            WindowDress(glass: scheme == .light)
+            WindowDress(glass: scheme == .light && !reduceTransparency, presentation: presentation)
                 .frame(width: 0, height: 0)
 
             // Everything else, laid out against the room the window actually
@@ -158,12 +165,15 @@ struct PlayerView: View {
                 // window too narrow for both gets the column *over* the player,
                 // which is what a drawer does, instead of a transport squeezed
                 // until it runs off the edge of the glass.
-                let reach = max(0, wide - Metrics.playerMin)
+                let horizontal = presentation.template == .horizontal
+                    || (presentation.template == .custom && wide >= 480 && wide > room.size.height)
+                let reach = horizontal ? max(0, wide - 308) : 0
                 // How far the column has come out: all of itself while it is
                 // open, and the hand's own worth while one is pulling it.
                 let travel = menu ? column : min(max(pull, 0), column)
                 ZStack(alignment: .topLeading) {
-                    player(tight: wide - min(travel, reach) < Metrics.roomy)
+                    templatePlayer(horizontal: horizontal, drawer: horizontal && travel > 0,
+                                   size: CGSize(width: wide - min(travel, reach), height: room.size.height))
                         .padding(.leading, min(travel, reach))
 
                     // The window's leading edge: a hand pulling the menu out.
@@ -177,13 +187,18 @@ struct PlayerView: View {
                     SideMenu(
                         engine: engine,
                         playlists: playlists,
-                        span: $sideSpan,
-                        refresh: fresh
+                        span: columnSpan,
+                        refresh: fresh,
+                        widthRange: columnRange,
+                        restingWidth: presentation.template == .custom ? Double(Metrics.side) : WindowTemplate.sideRest
                     )
                     .frame(width: column)
                     .offset(x: travel - column)
+                    .allowsHitTesting(travel > 0)
+                    .accessibilityHidden(travel == 0)
                 }
                 .frame(width: wide, height: room.size.height, alignment: .topLeading)
+                .clipped()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -248,6 +263,13 @@ struct PlayerView: View {
             let reopen = openWindow
             Tray.reopen = { reopen(id: Self.windowID) }
         }
+        .onChange(of: presentation.sideOpen) { _, isOpen in
+            if isOpen { fresh += 1 }
+        }
+        .onChange(of: lookName) { _, _ in
+            presentation.themeChanged(look)
+            look.apply()
+        }
         .onDisappear {
             if let keys { NSEvent.removeMonitor(keys) }
             keys = nil
@@ -259,7 +281,17 @@ struct PlayerView: View {
     /// The width the menu wants in the window, which is the width it was last
     /// pulled to, between the two it lives between.
     private var span: CGFloat {
-        CGFloat(min(max(sideSpan, Double(Metrics.sideMin)), Double(Metrics.sideMax)))
+        CGFloat(min(max(columnSpan.wrappedValue, columnRange.lowerBound), columnRange.upperBound))
+    }
+
+    private var columnRange: ClosedRange<Double> {
+        presentation.template == .custom
+            ? Double(Metrics.sideMin)...Double(Metrics.sideMax)
+            : WindowTemplate.sideRange
+    }
+
+    private var columnSpan: Binding<Double> {
+        presentation.template == .custom ? $sideSpan : $presentation.sideWidth
     }
 
     private var look: Theme { Theme(rawValue: lookName) ?? .system }
@@ -321,6 +353,118 @@ struct PlayerView: View {
 
     // MARK: - the player
 
+    /// P-10R measured content. H-A: 200 + 16 + 300 inside 516 × 212.
+    /// H-B: 160 + 12 + 152 inside 324 × 212; volume is in the tray.
+    /// V-A: 352 pt stack inside 200 × 365, centred (13 pt spare).
+    /// V-B is a drawer over this whole stack, never a 32 pt player.
+    private func templatePlayer(horizontal: Bool, drawer: Bool, size: CGSize) -> some View {
+        Group {
+            if engine.track != nil {
+                if horizontal {
+                    HStack(spacing: drawer ? 12 : 16) {
+                        let art = min(drawer ? 160.0 : 200.0, max(0, size.height - 20),
+                                      max(0, size.width - (drawer ? 188 : 200)))
+                        Cover(cover: engine.cover).frame(width: art, height: art)
+                        VStack(spacing: 0) {
+                            templateNames(titleHeight: 40, subtitleHeight: drawer ? 16 : 18)
+                            Color.clear.frame(height: drawer ? 8 : 14)
+                            progress(tight: true).frame(height: drawer ? 14 : 16)
+                            Color.clear.frame(height: drawer ? 8 : 12)
+                            templateHands
+                            if !drawer {
+                                Color.clear.frame(height: 12)
+                                templateVolume.frame(height: 24)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(.horizontal, drawer ? 12 : 16)
+                    .padding(.vertical, 10)
+                } else {
+                    VStack(spacing: 0) {
+                        // Custom may be as short as 232 pt of content. Only the
+                        // cover shrinks; seek and transport keep their hit areas.
+                        let art = min(200.0, max(0, size.width - 32), max(0, size.height - 176))
+                        Cover(cover: engine.cover).frame(width: art, height: art)
+                        Color.clear.frame(height: 10)
+                        templateNames(titleHeight: 36, subtitleHeight: 16)
+                        Color.clear.frame(height: 8)
+                        progress(tight: true).frame(height: 14)
+                        Color.clear.frame(height: 10)
+                        templateHands
+                        Color.clear.frame(height: 10)
+                        templateVolume.frame(height: 22)
+                    }
+                    .frame(maxWidth: 240)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+            } else {
+                // No phantom cover or duplicate Open Folder action when idle.
+                VStack(spacing: 12) {
+                    if let note = engine.note { saying(note, tight: true) }
+                    else { invitation(tight: true) }
+                    templateHands
+                    templateVolume.frame(maxWidth: 200)
+                }
+                .padding(16)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    private func templateNames(titleHeight: CGFloat, subtitleHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Text(engine.title ?? engine.track?.deletingPathExtension().lastPathComponent ?? "")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .frame(height: titleHeight)
+                .help(engine.track?.lastPathComponent ?? "")
+            Text([engine.artist, engine.album].compactMap { $0 }.joined(separator: " · "))
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.muted)
+                .lineLimit(1)
+                .frame(height: subtitleHeight)
+        }
+    }
+
+    /// Three glyphs, 26 pt each with 12 pt gaps. Modes remain in the volume row
+    /// where there is room, and are always accessible from the tray.
+    private var templateHands: some View {
+        HStack(spacing: 12) {
+            Door(icon: "backward.fill", help: "Previous — restart after three seconds",
+                 enabled: engine.count > 0, act: { engine.previous() })
+            Door(icon: engine.state == .playing ? "pause.fill" : "play.fill",
+                 help: engine.state == .playing ? "Pause (Space)" : "Play (Space)",
+                 on: true, enabled: engine.count > 0, act: { engine.toggle() })
+            Door(icon: "forward.fill", help: "Next track",
+                 enabled: engine.count > 0, act: { engine.next() })
+        }
+        .frame(height: 26)
+    }
+
+    private var templateVolume: some View {
+        HStack(spacing: 8) {
+            Door(icon: "shuffle", help: "Shuffle", on: engine.shuffle,
+                 size: 22, glyph: 11, act: { engine.toggleShuffle() })
+            Door(icon: engine.repeatMode == .one ? "repeat.1" : "repeat",
+                 help: repeatHelp, on: engine.repeatMode != .off,
+                 size: 22, glyph: 11, act: { engine.cycleRepeat() })
+            Door(icon: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                 help: engine.muted ? "Unmute" : "Mute", on: engine.muted,
+                 size: 22, glyph: 11, act: { engine.toggleMute() })
+            Slider(value: volume, in: 0...1)
+                .controlSize(.mini)
+                .tint(Palette.accent)
+                .accessibilityLabel("Volume")
+        }
+    }
+
+    // Legacy two-row footer: retained for the older dynamic layout, not used
+    // by measured H/V templates. Do not fold it into H's 162 pt stack.
     /// The player: the one track that matters, and the transport under it. No
     /// band of its own along the top — that is the window's toolbar now, and
     /// the first thing in the body of this window is the music.

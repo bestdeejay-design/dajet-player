@@ -42,6 +42,11 @@ jobs:
           set -o pipefail
           swift build 2>&1 | tee "$RUNNER_TEMP/1-debug.log"
 
+      - name: Presentation regression tests
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/1-tests.log"
+
       - name: Build (release)
         run: |
           set -o pipefail
