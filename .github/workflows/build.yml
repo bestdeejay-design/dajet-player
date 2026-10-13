@@ -30,6 +30,9 @@ jobs:
           sw_vers
           swift --version
           xcodebuild -version
+          # The numbers a reader of the pull request is entitled to, without
+          # having to open a log to get them: which Mac, and which Swift.
+          echo "::notice title=toolchain::$(sw_vers -productVersion) · $(swift --version 2>&1 | head -1) · $(xcodebuild -version | tail -1)
 
       # The budget in ROADMAP.md: a bundle under 15 MB. Debug first, because a
       # failure there says something about the code, and a failure in the
@@ -53,6 +56,7 @@ jobs:
         run: |
           KB=$(du -sk build/DajetPlayer.app | cut -f1)
           echo "build/DajetPlayer.app is ${KB} KB"
+          echo "::notice title=bundle::DajetPlayer.app is ${KB} KB of a 15360 KB budget"
           test "$KB" -le 15360
 
       # Zero-dep is a principle of the series, not a preference: only Apple's
