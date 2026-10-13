@@ -32,7 +32,7 @@ jobs:
           xcodebuild -version
           # The numbers a reader of the pull request is entitled to, without
           # having to open a log to get them: which Mac, and which Swift.
-          echo "::notice title=toolchain::$(sw_vers -productVersion) · $(swift --version 2>&1 | head -1) · $(xcodebuild -version | tail -1)
+          echo "::notice title=toolchain::$(sw_vers -productVersion) · $(swift --version 2>&1 | head -1) · $(xcodebuild -version | tail -1)"
 
       # The budget in ROADMAP.md: a bundle under 15 MB. Debug first, because a
       # failure there says something about the code, and a failure in the
