@@ -13,13 +13,17 @@ posted as the update. What is planned but not done yet lives in
 
 Opening music and playing it: a folder, a file, or a handful of either, dropped
 on the window or chosen from Open Folder… — played in order, one track after
-another, with its title, artist and album from the file, and its cover behind
-the window when it has one. Next, Previous, shuffle and repeat for the queue;
+another, with its title, artist and album from the file, and its cover in the
+window when it has one. Next, Previous, shuffle and repeat for the queue;
 Space still plays and pauses, the two arrows walk the queue beside it, and the
 Mac's own media keys and Now Playing card are the app's as well. A thin bar
 along the foot of the window shows how far into the track the player is, and
 takes it to another place when dragged; a volume slider and a mute button sit
-in the bar, and both are remembered between runs. Still only Apple's
+in the bar, and both are remembered between runs. The window itself now wears
+the `dajet` version of the look — glass over the whole of its surface in the
+light theme, matte near-black in the dark — with a side menu of playlists
+beside it: folders added by ⌘O or by being dropped on the window, kept in the
+app's own file, and still there the next time it opens. Still only Apple's
 frameworks and this Mac, with nothing third-party.
 
 ### Added
@@ -65,10 +69,47 @@ frameworks and this Mac, with nothing third-party.
   of; a volume slider and a mute button in the bar (both remembered between
   runs), and the `←` / `→` keys added to the key monitor that already had Space
 
+- `Sources/DajetPlayer/Design.swift` — the foundations of the look: one
+  palette of paired light/dark colours (the series' terracotta for the accent,
+  and a near-black for the dark window's ground — the series' own dark plate is
+  a page underlay, and a whole window of it reads grey), the distances the
+  window is laid out by, the two springs everything moves on, and the two
+  accessibility settings that take them away
+- `Sources/DajetPlayer/Window.swift` — the surface over the whole window, and
+  the window dressed for it: a system material behind the window with the lift,
+  the sheen and the foot that make a pane read as a pane, a transparent title
+  bar, and a `DragStrip` along the band that drags the window, answers the
+  double-click and takes a folder dropped on it
+- `Sources/DajetPlayer/Side.swift` — the side menu: the browser's own column
+  (232 points resting, pulled between 176 and 440 by its own edge, in and out
+  on one spring), a visible toggle in the window's top-left corner, playlists
+  with their tracks under them, the folder being played and the track being
+  heard both marked, and a click on a track that plays it at once
+- `Sources/DajetPlayer/Playlists.swift` — playlists as folders, in a `Codable`
+  file of the app's own (`~/Library/Application Support/Dajet Player/playlists.json`,
+  written off the main thread and atomically): added by ⌘O or by drop, removed
+  by hand and only by hand
+- `Sources/DajetPlayer/PlayerEngine.swift` — `source` (the folder the queue
+  came from, for the menu to mark), `cover` (the cover as it is, for the
+  window's sleeve) and `play(_:in:)`: one track of a playlist, played now, on
+  the queue of the folder that is already playing rather than by opening the
+  folder again
+- `Sources/DajetPlayer/App.swift` — the main window as a player and not a
+  list: the sleeve of what is playing, its name and artist, the transport
+  beneath it, and the tracks of a folder in the side menu, where they belong
+
+### Changed
+
+- `Sources/DajetPlayer/App.swift` — the window no longer draws a blurred cover
+  behind itself: the surface of the window is the look now (glass or matte),
+  and the cover is drawn once, sharp, as the sleeve of what is playing. The
+  engine still publishes the blurred `artwork` and draws it nowhere in this
+  version; the same picture is published as `cover` for the sleeve
+
 ### Not yet
 
-- Both skins, the equalizer, the disk image, the ZIP, the appcast and the
-  Homebrew tap (P-06…P-09)
+- The `joer` version's five atmospheres, the equalizer, the disk image, the
+  ZIP, the appcast and the Homebrew tap (P-07…P-09)
 
 ## 0.1.0 — 2026-10-12
 
