@@ -31,7 +31,15 @@ Show and Quit), and the icon moving while music plays. Covers are read from
 the file's own tags when it has them and from a picture beside it when it
 does not. The window will not shrink below a formal square of 232 points
 (plus the toolbar), and the toolbar itself is the system's own. Still only
-Apple's frameworks and this Mac, with nothing third-party.
+Apple's frameworks and this Mac, with nothing third-party. On top of that,
+the window now knows its shape: two templates the owner measured — Horizontal
+548×284 and Vertical 232×441 — and a Custom that is whatever the hand left it
+as, with no snap back. Appearance is three presets in the tray (Aero, Obsidian,
+System); the same preset keeps a chosen template, a different one restores its
+default. Clicking the tray icon hides the window and shows it again; the menu
+has Shuffle, Repeat, a Volume submenu and a quiet progress read-out. The light
+glass is clearer, the column is almost opaque, and the tray icon moves at four
+small steps a second.
 
 ### Added
 
@@ -125,10 +133,20 @@ Apple's frameworks and this Mac, with nothing third-party.
   square of 232 points of content (232×284 with the toolbar), and when it is
   that narrow the side menu comes out over the player rather than pushing it
   aside; the column never slides past the window's leading edge
+- `Sources/DajetPlayer/Presentation.swift` — window templates (Horizontal
+  548×284, Vertical 232×441, Custom with no snap), appearance presets (Aero /
+  Obsidian / System), the shared side column state, and the migration that
+  leaves an existing install's look and frame alone while a clean install opens
+  Aero + Vertical with the column shut
+- `Tests/DajetPlayerTests/PresentationTests.swift` — regression tests for the
+  migration, the appearance reset matrix, the owner's frame sizes, persistence
+  and frame application (Custom on manual resize, reopen, same-appearance
+  restore)
 - `.github/workflows/build.yml` — continuous integration on macOS 15 with
   Swift 6.1.2 and Xcode 16.4: a debug build, a release build and `./build.sh`,
   with the compiler's own lines attached to the pull request as annotations
-  and a notice naming the toolchain and the weight of the bundle
+  and a notice naming the toolchain and the weight of the bundle; `swift test`
+  runs with them
 
 ### Changed
 
@@ -137,6 +155,20 @@ Apple's frameworks and this Mac, with nothing third-party.
   and the cover is drawn once, sharp, as the sleeve of what is playing. The
   engine still publishes the blurred `artwork` and draws it nowhere in this
   version; the same picture is published as `cover` for the sleeve
+- `Sources/DajetPlayer/Window.swift` — the light glass is clearer: the system
+  material at 0.78 density, a short sheen at the top instead of a full-height
+  wash, lighter lift and foot, and a one-point rim so the pane has an edge on
+  a bright desktop; Reduce Transparency falls back to the solid ground
+- `Sources/DajetPlayer/Design.swift` — the side column is almost opaque (a
+  near-solid tile in both themes) so its text reads over the player, with the
+  opaque ground when Reduce Transparency is on
+- `Sources/DajetPlayer/Tray.swift` — the tray icon's dance is calmer: four
+  frames a second, eight small steps, one bar moving at a time between 0.45
+  and 0.70 instead of all four jumping; the Show item hides a visible window
+  (`orderOut`) and shows a hidden one; the menu gains Window templates,
+  Appearance presets, a Side Menu toggle, Shuffle / Repeat / Volume quick
+  controls and a quiet `position / duration · %` line; clicking the current
+  track always shows the window
 
 ### Not yet
 
