@@ -1,0 +1,64 @@
+# One job, on the platform this app is for: does it build, does the app it
+# makes stay inside the size it was given, and is it still nothing but Apple's
+# own frameworks. The epic's rule is that the build is green before a wave is
+# merged and green after it (joer#7), and a SwiftPM macOS app cannot be built
+# anywhere but on a Mac — so this is that Mac.
+#
+# `./build.sh` is the same command the README gives anybody who wants the app,
+# which is the point of running it here: a wave that builds with `swift build`
+# and not with the script that makes the product has not been built.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      # The budget in ROADMAP.md: a bundle under 15 MB. Debug first, because a
+      # failure there says something about the code, and a failure in the
+      # release build after it says something about the optimiser.
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build (release)
+        run: swift build -c release -Xswiftc -Osize
+
+      - name: Bundle the app
+        run: ./build.sh
+
+      - name: Bundle stays under 15 MB
+        run: |
+          KB=$(du -sk build/DajetPlayer.app | cut -f1)
+          echo "build/DajetPlayer.app is ${KB} KB"
+          test "$KB" -le 15360
+
+      # Zero-dep is a principle of the series, not a preference: only Apple's
+      # frameworks, and a checkout folder that has anything in it is a
+      # dependency that was added since.
+      - name: No third-party dependencies
+        run: |
+          swift package show-dependencies
+          test ! -d .build/checkouts || test -z "$(ls -A .build/checkouts)"
+
+      - name: Nothing reaches the network
+        run: |
+          # The claim in the README, checked the cheap way: no session, no
+          # socket, no address in the source. A URL that is a file on this Mac
+          # is what every URL in here is.
+          if grep -rnE 'URLSession|NSURLConnection|NWConnection|CFStreamCreatePairWithSocket|https?://' Sources; then
+            echo "something in Sources looks like a network" >&2
+            exit 1
+          fi
