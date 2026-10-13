@@ -23,8 +23,15 @@ in the bar, and both are remembered between runs. The window itself now wears
 the `dajet` version of the look — glass over the whole of its surface in the
 light theme, matte near-black in the dark — with a side menu of playlists
 beside it: folders added by ⌘O or by being dropped on the window, kept in the
-app's own file, and still there the next time it opens. Still only Apple's
-frameworks and this Mac, with nothing third-party.
+app's own file, and still there the next time it opens. The player now lives
+in the tray as well: an icon of its own in the menu bar, a full menu under it
+(the current track and where it sits, play/pause/previous/next, the playlists
+each with their own lazy submenu of tracks, Open Folder…, the theme, settings,
+Show and Quit), and the icon moving while music plays. Covers are read from
+the file's own tags when it has them and from a picture beside it when it
+does not. The window will not shrink below a formal square of 232 points
+(plus the toolbar), and the toolbar itself is the system's own. Still only
+Apple's frameworks and this Mac, with nothing third-party.
 
 ### Added
 
@@ -97,6 +104,31 @@ frameworks and this Mac, with nothing third-party.
 - `Sources/DajetPlayer/App.swift` — the main window as a player and not a
   list: the sleeve of what is playing, its name and artist, the transport
   beneath it, and the tracks of a folder in the side menu, where they belong
+- `Sources/DajetPlayer/Tray.swift` — the player in the menu bar: an
+  `NSStatusItem` with a template icon drawn in code, a menu rebuilt each time
+  it is asked for (the current track and where it sits in the pass,
+  play/pause/previous/next, the playlists with a lazy submenu of tracks under
+  each, Open Folder…, the theme, settings — hide the Dock icon, animate the
+  tray icon while playing — and Show / Quit), and the icon moving at nine
+  frames a second only while music plays. The tray owns the engine and the
+  playlists, so the music outlives the window
+- `Sources/DajetPlayer/Artwork.swift` — covers from three places, in order:
+  the file's own tags through AVFoundation, the raw bytes of an ID3v2 or
+  FLAC picture, and a file of the same name beside the track (`folder.jpg`,
+  `cover.jpg`, `front.jpg`, `album.jpg` and the like). Cached by modification
+  time so a cover is read once, and kept alive as long as the window wants it
+- `Sources/DajetPlayer/App.swift` — the system's own toolbar: the side menu's
+  toggle at the leading end beside the traffic lights (⌥⌘S), Open Folder… and
+  the theme at the trailing end. The old band of icons in the window's body
+  is gone; the toolbar is the only place those three live now
+- `Sources/DajetPlayer/App.swift` — the window will not shrink below a formal
+  square of 232 points of content (232×284 with the toolbar), and when it is
+  that narrow the side menu comes out over the player rather than pushing it
+  aside; the column never slides past the window's leading edge
+- `.github/workflows/build.yml` — continuous integration on macOS 15 with
+  Swift 6.1.2 and Xcode 16.4: a debug build, a release build and `./build.sh`,
+  with the compiler's own lines attached to the pull request as annotations
+  and a notice naming the toolchain and the weight of the bundle
 
 ### Changed
 
