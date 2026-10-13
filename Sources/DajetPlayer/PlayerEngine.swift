@@ -1113,51 +1113,103 @@ private enum Sleeves {
     /// will show instead, and a cover that will not decode is a window that
     /// stays the dark it was. If the names are already known, they are kept
     /// while the cover is read again; the text tags are not read twice.
+    ///
+    /// Three places are asked, in the order they are worth asking in (P-10):
+    /// AVFoundation, which reads an mp3's ID3 and an m4a's atoms; the file's
+    /// own bytes, for what AVFoundation does not read on this platform — a
+    /// FLAC's Vorbis comment and PICTURE blocks, and an ID3v2 tag worn in
+    /// front of any of them; and the folder beside the file, whose cover.jpg
+    /// is an album's cover when its files carry none (see Artwork.swift, where
+    /// all three readings and the shelf they are kept on live).
     static func read(_ url: URL, keeping known: Sleeve?) async -> Sleeve {
         var sleeve = known ?? Sleeve()
         let asset = AVURLAsset(url: url)
         // The tags of the file itself: ID3 in an mp3, the atoms of an m4a,
         // whatever a flac or a wav keeps. The URL is the one that was opened —
         // a file on this Mac — and there is no other kind anywhere in here.
-        guard let items = try? await asset.load(.commonMetadata), !Task.isCancelled else {
-            return sleeve
-        }
-        for item in items {
-            guard !Task.isCancelled else { return sleeve }
-            // The key is known the moment the item is, and asking for it costs
-            // nothing; the values are what the disk is read for, and they are
-            // asked of one at a time. The first item to have a value for a key
-            // is the one kept: a file can say the same thing twice, in two key
-            // spaces, and saying it twice is not saying it better.
-            guard let key = item.commonKey else { continue }
-            switch key {
-            case .commonKeyTitle:
-                if known == nil, sleeve.title == nil {
-                    sleeve.title = name(try? await item.load(.stringValue))
+        // A file AVFoundation has nothing at all to say about is not a file
+        // this gives up on: the bytes are asked next.
+        if let items = try? await asset.load(.commonMetadata) {
+            for item in items {
+                guard !Task.isCancelled else { return sleeve }
+                // The key is known the moment the item is, and asking for it
+                // costs nothing; the values are what the disk is read for, and
+                // they are asked of one at a time. The first item to have a
+                // value for a key is the one kept: a file can say the same
+                // thing twice, in two key spaces, and saying it twice is not
+                // saying it better.
+                guard let key = item.commonKey else { continue }
+                switch key {
+                case .commonKeyTitle:
+                    if known == nil, sleeve.title == nil {
+                        sleeve.title = name(try? await item.load(.stringValue))
+                    }
+                case .commonKeyArtist:
+                    if known == nil, sleeve.artist == nil {
+                        sleeve.artist = name(try? await item.load(.stringValue))
+                    }
+                // The album, as AVFoundation spells it.
+                case .commonKeyAlbumName:
+                    if known == nil, sleeve.album == nil {
+                        sleeve.album = name(try? await item.load(.stringValue))
+                    }
+                case .commonKeyArtwork:
+                    // One reading of the file's bytes, two pictures out of it:
+                    // the sharp one for the system's card, the blurred one for
+                    // the window. Kept on the shelf, so that a track walked
+                    // back to is a track whose cover is already in hand.
+                    if sleeve.cover == nil, let data = try? await item.load(.dataValue) {
+                        keep(&sleeve, ArtCache.picture(of: url, embedded: true, side: side) {
+                            Self.picture(data)
+                        })
+                    }
+                default:
+                    continue
                 }
-            case .commonKeyArtist:
-                if known == nil, sleeve.artist == nil {
-                    sleeve.artist = name(try? await item.load(.stringValue))
-                }
-            // The album, as AVFoundation spells it.
-            case .commonKeyAlbumName:
-                if known == nil, sleeve.album == nil {
-                    sleeve.album = name(try? await item.load(.stringValue))
-                }
-            case .commonKeyArtwork:
-                // One reading of the file's bytes, two pictures out of it: the
-                // sharp one for the system's card, the blurred one for the
-                // window.
-                if sleeve.cover == nil, let data = try? await item.load(.dataValue) {
-                    let cover = picture(data)
-                    sleeve.cover = cover
-                    sleeve.artwork = cover.flatMap(softened)
-                }
-            default:
-                continue
             }
         }
+        guard !Task.isCancelled else { return sleeve }
+        // What AVFoundation had nothing to say about, out of the file's own
+        // bytes: the blocks of a FLAC, and the ID3v2 tag that so many files
+        // wear in front of everything else. Only worth asking while something
+        // is missing — a track whose names are known and whose cover is in
+        // hand costs no reading at all.
+        if sleeve.cover == nil || (known == nil
+            && (sleeve.title == nil || sleeve.artist == nil || sleeve.album == nil)) {
+            let said = Tags.read(url)
+            if known == nil {
+                if sleeve.title == nil { sleeve.title = said.title }
+                if sleeve.artist == nil { sleeve.artist = said.artist }
+                if sleeve.album == nil { sleeve.album = said.album }
+            }
+            if sleeve.cover == nil, let data = said.picture {
+                keep(&sleeve, ArtCache.picture(of: url, embedded: true, side: side) {
+                    Self.picture(data)
+                })
+            }
+        }
+        guard !Task.isCancelled, sleeve.cover == nil else { return sleeve }
+        // And with nothing in the file, the picture lying beside it — the
+        // folder's own cover, which is what an album with untagged files is
+        // kept by. Read through ImageIO's own URL rather than into memory
+        // first: a scan of a sleeve can be twenty megabytes and the thumbnail
+        // wanted out of it is a fraction of one.
+        if let beside = Sidecar.cover(for: url) {
+            keep(&sleeve, ArtCache.picture(of: beside, embedded: false, side: side) {
+                Self.picture(at: beside)
+            })
+        }
         return sleeve
+    }
+
+    /// One picture, in the two forms the app wants it in: sharp for the
+    /// window's sleeve and for the system's card, and blurred for the wash
+    /// behind a window that wears one. Both are made here, on the queue that
+    /// read the file, and neither is touched again.
+    private static func keep(_ sleeve: inout Sleeve, _ cover: CGImage?) {
+        guard let cover else { return }
+        sleeve.cover = cover
+        sleeve.artwork = softened(cover)
     }
 
     /// A name worth saying: what the tag holds with the space taken off both
@@ -1177,6 +1229,20 @@ private enum Sleeves {
     /// reading works from — the window is shown it blurred, the system's card
     /// as it is.
     private static func picture(_ data: Data) -> CGImage? {
+        guard let sourceFile = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return thumbnail(of: sourceFile)
+    }
+
+    /// The same, from a file rather than from its bytes — which is how a
+    /// picture lying beside the music is read, without a folder's twenty
+    /// megabyte sleeve scan ever becoming twenty megabytes of memory.
+    private static func picture(at url: URL) -> CGImage? {
+        guard let sourceFile = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return thumbnail(of: sourceFile)
+    }
+
+    /// One source, one thumbnail, at the metric this reading keeps.
+    private static func thumbnail(of sourceFile: CGImageSource) -> CGImage? {
         let options: [CFString: Any] = [
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -1184,11 +1250,9 @@ private enum Sleeves {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: Int(side),
         ]
-        guard let sourceFile = CGImageSourceCreateWithData(data as CFData, nil),
-              let source = CGImageSourceCreateThumbnailAtIndex(
-                sourceFile, 0, options as CFDictionary
-              ),
-              source.width > 0, source.height > 0 else { return nil }
+        guard let source = CGImageSourceCreateThumbnailAtIndex(
+            sourceFile, 0, options as CFDictionary
+        ), source.width > 0, source.height > 0 else { return nil }
         return source
     }
 
