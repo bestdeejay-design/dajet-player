@@ -42,6 +42,9 @@ struct SideMenu: View {
     /// has just come out, or a folder has just been added — so that the tracks
     /// shown are the folder's tracks now and not the ones from an hour ago.
     var refresh: Int
+    var widthRange: ClosedRange<Double> = Double(Metrics.sideMin)...Double(Metrics.sideMax)
+    var restingWidth: Double = Double(Metrics.side)
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// The playlist whose tracks are shown. One at a time, which is what a
     /// column this narrow can hold honestly.
     @State private var showing: Playlist.ID?
@@ -71,11 +74,11 @@ struct SideMenu: View {
         // under a material is the one thing the platform's own guidance says
         // never to do, and it is right: two translucent layers read as fog,
         // and the second one only blurs the first one's blur. So the column is
-        // one wash over whatever the window already is (Palette.side: a step
+        // one almost-opaque tile over the window (Palette.side: a step
         // deeper than the glass in the light theme, a step lighter than the
         // matte in the dark), and the hairline and the shadow at its edge are
         // what say it is a column rather than a shade.
-        .background(Palette.side)
+        .background(reduceTransparency ? Palette.ground : Palette.side)
         // The shadow it casts on what it is over, which is what says it is
         // *over* something rather than beside it.
         .shadow(color: .black.opacity(0.18), radius: 14, x: 4)
@@ -155,12 +158,12 @@ struct SideMenu: View {
                     .onChanged { hand in
                         if grabbed == nil { grabbed = span }
                         let wanted = (grabbed ?? span) + Double(hand.translation.width)
-                        span = min(Double(Metrics.sideMax), max(Double(Metrics.sideMin), wanted))
+                        span = min(widthRange.upperBound, max(widthRange.lowerBound, wanted))
                     }
                     .onEnded { _ in grabbed = nil }
             )
             .onTapGesture(count: 2) {
-                withAnimation(Motion.settle) { span = Double(Metrics.side) }
+                withAnimation(Motion.settle) { span = restingWidth }
             }
             .animation(Motion.quick, value: onEdge)
     }

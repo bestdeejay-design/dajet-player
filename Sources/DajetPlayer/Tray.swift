@@ -37,6 +37,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The player, made here at launch rather than by a window that may never
     /// open, and held for as long as the app runs.
+    let presentation = Presentation()
     let engine = PlayerEngine()
     /// The playlists, and the file they live in — read here for the same
     /// reason, so that the menu has them whether a window has been there or
@@ -62,6 +63,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var step = 0
     /// The ear on the player's state: what starts and stops the dance.
     private var watching: AnyCancellable?
+    private var accessibilityObserver: NSObjectProtocol?
 
     /// What this player keeps of its tray, in the plainest drawer macOS has —
     /// the same corner of the standard defaults the volume and the look live
@@ -129,6 +131,22 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MainActor.assumeIsolated { self?.beat(state) }
             }
         beat(engine.state)
+        accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.beat(self.engine.state)
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        pulse?.invalidate()
+        if let accessibilityObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
+        }
     }
 
     /// Closing the window is not closing the player, and it is not closing the
@@ -164,22 +182,21 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return "Dajet Player — \(title), \(artist)"
     }
 
-    /// Start the dance, if it is not already going. One timer, nine frames a
-    /// second, four frames round and round: enough to read as movement at the
+    /// Start the dance, if it is not already going. One timer, four frames a
+    /// second, eight small steps round and round: enough to read as movement at the
     /// size a menu bar icon is, and a fraction of a percent of a core.
     private func dance() {
         guard pulse == nil else { return }
-        pulse = Timer.scheduledTimer(withTimeInterval: 1.0 / 9.0, repeats: true) { [weak self] _ in
+        pulse = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             // A timer's tick is on the main run loop, and the icon is drawn
             // there; said so, because a closure handed to a timer is not a
             // place the compiler believes is the main actor either.
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.step += 1
+                self.step = (self.step + 1) % 8
                 self.item?.button?.image = Icon.playing(self.step)
             }
         }
-        step += 1
         item?.button?.image = Icon.playing(step)
     }
 
@@ -216,24 +233,35 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nowPlaying(in: menu)
         menu.addItem(.separator())
         transport(in: menu)
+        quickControls(in: menu)
         menu.addItem(.separator())
         folders(in: menu)
         menu.addItem(.separator())
         let folder = act(#selector(choose), "Open Folder…", "folder.badge.plus", "o", .command)
         folder.toolTip = "A folder of music — \(PlayerEngine.kinds). It joins the menu, and it plays."
         menu.addItem(folder)
-        menu.addItem(submenu("Theme", icon: Theme.remembered.icon) { theme in
-            for look in Theme.allCases {
-                let one = NSMenuItem(
-                    title: look.title, action: #selector(self.look(_:)), keyEquivalent: ""
-                )
-                one.target = self
-                one.representedObject = look.rawValue
-                one.state = look == Theme.remembered ? .on : .off
-                theme.addItem(one)
+        menu.addItem(submenu("Window", icon: "macwindow") { sizes in
+            for template in WindowTemplate.allCases where template != .custom {
+                let one = self.act(#selector(self.windowSize(_:)), template.title)
+                one.representedObject = template.rawValue
+                one.state = template == self.presentation.template ? .on : .off
+                sizes.addItem(one)
             }
+            if self.presentation.template == .custom { sizes.addItem(self.plain("Custom")) }
         })
+        menu.addItem(self.tick(
+            "Side Menu", on: presentation.sideOpen,
+            help: "Show or hide the column — ⌥⌘S", act: #selector(toggleSide)
+        ))
         menu.addItem(submenu("Settings", icon: "slider.horizontal.3") { settings in
+            settings.addItem(self.submenu("Appearance", icon: Theme.remembered.icon) { appearance in
+                for preset in AppearancePreset.allCases {
+                    let one = self.act(#selector(self.appearance(_:)), preset.title)
+                    one.representedObject = preset.rawValue
+                    one.state = preset == self.presentation.preset ? .on : .off
+                    appearance.addItem(one)
+                }
+            })
             settings.addItem(self.tick(
                 "Hide Dock Icon",
                 on: Prefs.hidesDock,
@@ -249,7 +277,8 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ))
         })
         menu.addItem(.separator())
-        menu.addItem(act(#selector(summon), "Show Dajet Player", "macwindow"))
+        menu.addItem(act(#selector(summon), Self.found()?.isVisible == true
+                         ? "Hide Dajet Player" : "Show Dajet Player", "macwindow"))
         // Quit with no target of its own: the action walks up the responder
         // chain to the application, which is the thing that terminates, and a
         // menu that answered its own Quit would be a second way of ending the
@@ -272,7 +301,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let said = engine.title ?? url.deletingPathExtension().lastPathComponent
-        let head = NSMenuItem(title: said, action: #selector(summon), keyEquivalent: "")
+        let head = NSMenuItem(title: said, action: #selector(showPlayer), keyEquivalent: "")
         head.target = self
         head.attributedTitle = NSAttributedString(
             string: said,
@@ -425,11 +454,61 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// One of the three looks, chosen from the tray and remembered under the
     /// one key the window reads — the same choice, from either side of it.
-    @objc private func look(_ sender: NSMenuItem) {
+    @objc private func appearance(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String,
-              let wanted = Theme(rawValue: name) else { return }
-        UserDefaults.standard.set(wanted.rawValue, forKey: Theme.key)
-        wanted.apply()
+              let wanted = AppearancePreset(rawValue: name) else { return }
+        presentation.select(wanted)
+    }
+
+    @objc private func windowSize(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String,
+              let wanted = WindowTemplate(rawValue: name) else { return }
+        presentation.select(wanted)
+        showPlayer()
+    }
+
+    @objc private func toggleSide() { presentation.sideOpen.toggle() }
+    @objc private func shuffle() { engine.toggleShuffle() }
+    @objc private func repeatMode() { engine.cycleRepeat() }
+    @objc private func mute() { engine.toggleMute() }
+    @objc private func setVolume(_ sender: NSMenuItem) {
+        engine.setVolume(Float(sender.tag) / 100)
+    }
+
+    private func quickControls(in menu: NSMenu) {
+        menu.addItem(tick("Shuffle", on: engine.shuffle,
+                          help: "Shuffle the queue", act: #selector(shuffle)))
+        let repeatTitle: String
+        switch engine.repeatMode {
+        case .off: repeatTitle = "Repeat: Off"
+        case .all: repeatTitle = "Repeat: All"
+        case .one: repeatTitle = "Repeat: One"
+        }
+        menu.addItem(tick(repeatTitle, on: engine.repeatMode != .off,
+                          help: "Off → All → One", act: #selector(repeatMode)))
+        menu.addItem(submenu("Volume", icon: "speaker.wave.2") { volume in
+            volume.addItem(self.tick("Mute", on: self.engine.muted,
+                                    help: "Mute without losing the volume", act: #selector(self.mute)))
+            volume.addItem(.separator())
+            for level in [0, 25, 50, 75, 100] {
+                let one = self.act(#selector(self.setVolume(_:)), "\(level) %")
+                one.tag = level
+                one.state = abs(self.engine.volume - Float(level) / 100) < 0.001 ? .on : .off
+                volume.addItem(one)
+            }
+        })
+        // Snapshot on open, no second progress timer while the menu is shut.
+        let duration = engine.duration.isFinite ? max(0, engine.duration) : 0
+        let position = engine.position.isFinite ? max(0, engine.position) : 0
+        let percent = duration > 0 ? Int((min(position / duration, 1) * 100).rounded()) : 0
+        menu.addItem(plain("\(Self.clock(position)) / \(Self.clock(duration)) · \(percent) %"))
+    }
+
+    private static func clock(_ seconds: TimeInterval) -> String {
+        let whole = Int(min(max(0, seconds), Double(Int.max / 2)))
+        return whole >= 3600
+            ? String(format: "%d:%02d:%02d", whole / 3600, whole / 60 % 60, whole % 60)
+            : String(format: "%d:%02d", whole / 60, whole % 60)
     }
 
     /// The Dock's icon, away or back. Away means the tray is the only way in,
@@ -453,8 +532,18 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// SwiftUI if it is not, and the app brought forward either way — an
     /// accessory app is not in front of anything until it says so.
     @objc private func summon() {
+        if let window = Self.found(), window.isVisible {
+            // Visibility, not focus: clicking the status item can take key status.
+            window.orderOut(nil)
+        } else {
+            showPlayer()
+        }
+    }
+
+    @objc private func showPlayer() {
         NSApp.activate()
         if let window = Self.found() {
+            if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -582,13 +671,17 @@ enum Icon {
     /// What a menu bar icon is given to draw in.
     private static let box = NSSize(width: 22, height: 22)
 
-    /// The dance: four bars, four frames, and the heights of them in an order
-    /// that never repeats itself twice running.
+    /// One bar per step, round-robin, including the wrap back to frame zero.
+    /// Four fps and a 0.45…0.70 range: visible, not an alert.
     private static let dance: [[CGFloat]] = [
-        [0.34, 0.66, 0.44, 0.82],
-        [0.62, 0.36, 0.86, 0.46],
-        [0.42, 0.80, 0.34, 0.62],
-        [0.78, 0.44, 0.66, 0.34],
+        [0.45, 0.60, 0.50, 0.65],
+        [0.55, 0.60, 0.50, 0.65],
+        [0.55, 0.70, 0.50, 0.65],
+        [0.55, 0.70, 0.60, 0.65],
+        [0.55, 0.70, 0.60, 0.55],
+        [0.45, 0.70, 0.60, 0.55],
+        [0.45, 0.60, 0.60, 0.55],
+        [0.45, 0.60, 0.50, 0.55],
     ]
 
     /// Not playing: the wave, which is the mark.

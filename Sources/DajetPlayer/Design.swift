@@ -69,13 +69,13 @@ enum Palette {
     enum Glass {
         /// The lift: enough white for the pane to read as a pane, little
         /// enough that the desktop behind it is still what is seen through it.
-        static let lift = Color.white.opacity(0.09)
+        static let lift = Color.white.opacity(0.025)
         /// The sheen: the top edge catching the light, which is the one thing
         /// that says which way is up on a surface with no edges of its own.
-        static let sheen = Color.white.opacity(0.18)
+        static let sheen = Color.white.opacity(0.07)
         /// The foot: the opposite, where the pane meets the window's lower
         /// edge and everything behind it is floor.
-        static let foot = Color.black.opacity(0.035)
+        static let foot = Color.black.opacity(0.022)
     }
 
     /// The pairs themselves, for the AppKit corners of the app that want an
@@ -101,7 +101,7 @@ enum Palette {
         /// One step off the ground, the way the browser's own column is: toward
         /// the ink in both themes, which is deeper on the light side and
         /// lighter on the dark.
-        static let side = veil(light: (0, 0, 0, 0.050), dark: (1, 1, 1, 0.045))
+        static let side = veil(light: (0.96, 0.97, 0.98, 0.92), dark: (0.075, 0.080, 0.090, 0.94))
         static let onAccent = tint(light: (1.0, 1.0, 1.0), dark: (0.055, 0.059, 0.067))
 
         /// The pair looked up by the appearance the window is in. One
