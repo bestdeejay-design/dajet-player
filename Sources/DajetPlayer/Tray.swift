@@ -93,6 +93,17 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - launching
 
+    /// As early as the app is able to speak. A listener who asked to live in
+    /// the menu bar only should not have to watch a Dock icon appear and then
+    /// go away again on every launch — and with `LSUIElement` written by a
+    /// build script that has no opinion about settings, this is the one place
+    /// the icon can be kept from appearing at all. Only when the setting is
+    /// on: an app that wants a Dock icon is an app that already has one, and
+    /// taking it away and giving it back is a flicker for nothing.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if Prefs.hidesDock { NSApp.setActivationPolicy(.accessory) }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = Icon.still
@@ -476,7 +487,18 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// `LSUIElement` — and the version this app can have, because its plist is
     /// written by a build script that has no opinion about settings.
     private func dress() {
+        let open = NSApp.windows.contains { $0.isVisible }
         NSApp.setActivationPolicy(Prefs.hidesDock ? .accessory : .regular)
+        // A change of policy can take the windows with it: to AppKit the
+        // Dock's icon and a window's place in front of everything else are
+        // close enough to the same thing that hiding one has been known to
+        // hide the other. So a window that was open before the switch is put
+        // back after it, and hiding the Dock's icon hides the Dock's icon and
+        // nothing else. At launch there is no window yet and nothing to put
+        // back, which is why this is asked and not assumed.
+        guard open else { return }
+        NSApp.activate()
+        Self.found()?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - the items themselves
