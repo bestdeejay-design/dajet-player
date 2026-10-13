@@ -58,16 +58,24 @@ enum Palette {
     /// the desktop, the sheen across its top, and the shadow it casts at its
     /// foot. Transparent values, because they lie *over* the material and are
     /// not colours of their own (see Window.swift).
+    ///
+    /// All three are lighter than the first version of this glass wore them
+    /// (P-10 — the owner's word on that one was "too murky"): the material
+    /// under them is a window onto the desk now rather than a wall of frost,
+    /// and a wash heavy enough to be seen over frost is a curtain over a
+    /// window. What they are for has not changed — a pane with no lift and no
+    /// sheen is a rectangle of somebody else's wallpaper — only how much of
+    /// each it takes to say it.
     enum Glass {
         /// The lift: enough white for the pane to read as a pane, little
         /// enough that the desktop behind it is still what is seen through it.
-        static let lift = Color.white.opacity(0.14)
+        static let lift = Color.white.opacity(0.09)
         /// The sheen: the top edge catching the light, which is the one thing
         /// that says which way is up on a surface with no edges of its own.
-        static let sheen = Color.white.opacity(0.28)
+        static let sheen = Color.white.opacity(0.18)
         /// The foot: the opposite, where the pane meets the window's lower
         /// edge and everything behind it is floor.
-        static let foot = Color.black.opacity(0.06)
+        static let foot = Color.black.opacity(0.035)
     }
 
     /// The pairs themselves, for the AppKit corners of the app that want an
@@ -128,23 +136,40 @@ enum Palette {
 /// The distances the window is laid out by. The browser's own numbers where
 /// they are the same thing — the column's width, the corner, the strip — so
 /// that the two apps are the same app twice.
+///
+/// Two numbers that used to be here are gone (P-10): the height of a band
+/// along the top of the window, and where the traffic lights end. Both were
+/// this app measuring the system's own furniture with a ruler, so that a band
+/// of its own could sit in the same place and leave the same air — and both
+/// became nothing at all the moment the band became the platform's toolbar,
+/// which is where the traffic lights are and knows it without being told.
 enum Metrics {
-    /// The band along the top of the window: the traffic lights' corner, the
-    /// side menu's toggle in it, and the buttons at the other end.
-    static let bar: CGFloat = 52
-    /// Where the traffic lights end and ours may begin. The lights run from
-    /// 19 to 79 — measured in the browser, and they are the same three
-    /// buttons in the same corner — with the same air on their right.
-    static let lights: CGFloat = 84
-    /// One round button in that band.
+    /// One round button in the window, and the size a hand expects one at.
     static let door: CGFloat = 26
     /// The side menu: the width it rests at, and the two it is pulled between.
+    /// The resting width is also the smallest window this player has — a formal
+    /// square of it, and the reason a window can never be narrower than the
+    /// column that belongs in it (see App.swift).
     static let side: CGFloat = 232
     static let sideMin: CGFloat = 176
     static let sideMax: CGFloat = 440
     /// The band along the window's leading edge that the side menu is pulled
     /// out by, and the one along the column's own edge that sizes it.
     static let pull: CGFloat = 9
+    /// The air above the column's first row, now that the column has no band of
+    /// its own to hold it away from the toolbar.
+    static let gap: CGFloat = 10
+    /// The narrowest the player is ever squeezed to. Past this the column goes
+    /// *over* the player, which is what a drawer does, rather than shoving the
+    /// transport off the edge of the glass: a window too small for both is a
+    /// window with one of them, and the one a hand just asked for is the column.
+    static let playerMin: CGFloat = 200
+    /// The width from which the foot of the window has room for all seven of
+    /// its controls on one row — the two modes, the three hands and the volume,
+    /// with the air between them that makes a row of buttons readable rather
+    /// than a bar of teeth. Below it they are the same seven on two rows, and
+    /// nothing is dropped, hidden or squeezed off the end (P-10).
+    static let roomy: CGFloat = 500
     /// The sleeve: how large it may be on a large window. A picture is the
     /// only thing in this window that is allowed to be that big, and on a
     /// small window it is as big as there is room for and no larger.
