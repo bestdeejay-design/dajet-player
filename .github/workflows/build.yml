@@ -7,6 +7,10 @@
 # `./build.sh` is the same command the README gives anybody who wants the app,
 # which is the point of running it here: a wave that builds with `swift build`
 # and not with the script that makes the product has not been built.
+#
+# A failing build turns the compiler's own lines into annotations, so that what
+# went wrong is readable from the pull request rather than only from a log that
+# has to be opened in a browser.
 name: build
 
 on:
@@ -31,13 +35,19 @@ jobs:
       # failure there says something about the code, and a failure in the
       # release build after it says something about the optimiser.
       - name: Build (debug)
-        run: swift build
+        run: |
+          set -o pipefail
+          swift build 2>&1 | tee "$RUNNER_TEMP/1-debug.log"
 
       - name: Build (release)
-        run: swift build -c release -Xswiftc -Osize
+        run: |
+          set -o pipefail
+          swift build -c release -Xswiftc -Osize 2>&1 | tee "$RUNNER_TEMP/2-release.log"
 
       - name: Bundle the app
-        run: ./build.sh
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee "$RUNNER_TEMP/3-bundle.log"
 
       - name: Bundle stays under 15 MB
         run: |
@@ -61,4 +71,45 @@ jobs:
           if grep -rnE 'URLSession|NSURLConnection|NWConnection|CFStreamCreatePairWithSocket|https?://' Sources; then
             echo "something in Sources looks like a network" >&2
             exit 1
+          fi
+
+      # The compiler's own words, where they can be read without opening a log
+      # in a browser: one annotation per error, with the file and the line, so
+      # that they land in the diff of the pull request as well.
+      - name: What the compiler said
+        if: failure()
+        run: |
+          shopt -s nullglob
+          said=0
+          for log in "$RUNNER_TEMP"/*.log; do
+            found=$(awk -v ws="${GITHUB_WORKSPACE%/}/" '
+              /error:/ {
+                line = $0
+                if (match(line, /^[^ ]+\.swift:[0-9]+:[0-9]+: error: /)) {
+                  head = substr(line, RSTART, RLENGTH)
+                  rest = substr(line, RSTART + RLENGTH)
+                  split(head, part, ":")
+                  file = part[1]
+                  sub(ws, "", file)
+                  printf "::error file=%s,line=%s::%s\n", file, part[2], rest
+                } else {
+                  sub(ws, "", line)
+                  printf "::error::%s\n", line
+                }
+              }
+            ' "$log" | sort -u | head -80)
+            if [ -n "$found" ]; then
+              printf '%s\n' "$found"
+              said=1
+            fi
+          done
+          # Something failed that was not a compile error: the tail of the last
+          # log is better than silence.
+          if [ "$said" = 0 ]; then
+            for log in "$RUNNER_TEMP"/*.log; do last="$log"; done
+            if [ -n "${last:-}" ]; then
+              tail -12 "$last" | while IFS= read -r line; do
+                printf '::error::%s\n' "${line//\%/%%}"
+              done
+            fi
           fi
