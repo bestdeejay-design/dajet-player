@@ -16,6 +16,22 @@ The look of that window is the `dajet` version of it: glass over the whole of it
 
 The `joer` skin and the release are the waves that follow; the queue is in [ROADMAP.md](ROADMAP.md).
 
+## What it looks like
+
+<picture><img src="assets/screenshots/horizontal-playing.png" width="548" alt="The horizontal template: the cover, the track and the transport"></picture>
+<picture><img src="assets/screenshots/vertical-playing.png" width="232" alt="The vertical template, 232 by 441"></picture>
+
+*Horizontal — 548 × 284, and Vertical — 232 × 441: the two templates the owner measured, glass in the light theme.*
+
+<picture><img src="assets/screenshots/side-menu.png" width="600" alt="The side menu with playlists and their tracks"></picture>
+
+*The side menu: playlists, and the tracks of the one that is open — the window stays the player.*
+
+<picture><img src="assets/screenshots/glass-desktop.png" width="600" alt="The glass over a desktop"></picture>
+<picture><img src="assets/screenshots/obsidian.png" width="232" alt="The dark theme, Obsidian"></picture>
+
+*Left: the light theme is glass over whatever is behind it. Right: Obsidian — the dark theme, one matte surface.*
+
 ## What it is
 
 Dajet Player holds the position the rest of the series does: **a player that stays silent**.
