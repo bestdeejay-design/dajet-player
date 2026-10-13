@@ -93,7 +93,7 @@ enum Tags {
         // one that keeps its words somewhere this file has no business
         // looking (an m4a, which AVFoundation has already read).
         if let head = read(handle, at: 0, count: 10), head.count == 10 {
-            if Bytes(head).word(3) == "ID3" {
+            if Bytes(head).peek(3) == "ID3" {
                 var cursor = Bytes(head)
                 _ = cursor.word(3)
                 // Two of the header's bytes as numbers: which version the tag
@@ -117,7 +117,7 @@ enum Tags {
                 } else {
                     at = 10
                 }
-            } else if Bytes(head).word(4) != "fLaC" {
+            } else if Bytes(head).peek(4) != "fLaC" {
                 return said
             }
         }
@@ -134,7 +134,7 @@ enum Tags {
     private static func flac(_ handle: FileHandle, from start: UInt64) -> TagReading {
         var said = TagReading()
         guard let marker = read(handle, at: start, count: 4),
-              Bytes(marker).word(4) == "fLaC" else { return said }
+              Bytes(marker).peek(4) == "fLaC" else { return said }
         var at = start + 4
         while at + 4 <= reach {
             guard let head = read(handle, at: at, count: 4) else { break }
@@ -237,7 +237,10 @@ enum Tags {
         guard count > 0 else { return nil }
         do {
             try handle.seek(toOffset: place)
-            return try handle.readData(upToCount: count)
+            // `read(upToCount:)` and not the older `readData(ofLength:)`: this
+            // one throws, and returns nothing at all rather than an empty
+            // reading when the file ends first.
+            return try handle.read(upToCount: count)
         } catch {
             return nil
         }
@@ -353,6 +356,10 @@ struct Bytes {
 
     init(_ data: Data) { bytes = [UInt8](data) }
 
+    /// The same cursor over bytes that are already an array, which is what the
+    /// frames of an ID3 tag are once they have been taken out of it.
+    init(_ bytes: [UInt8]) { self.bytes = bytes }
+
     var left: Int { max(0, bytes.count - at) }
 
     mutating func take(_ count: Int) -> [UInt8]? {
@@ -371,6 +378,15 @@ struct Bytes {
     mutating func word(_ count: Int) -> String? {
         guard let held = take(count) else { return nil }
         return String(bytes: held, encoding: .ascii)
+    }
+
+    /// The same letters, without moving: for asking a file what it is before
+    /// deciding whether to read it. Asking is not a mutation, and a question
+    /// put to a reading that is only being looked at has no business changing
+    /// where that reading is.
+    func peek(_ count: Int) -> String? {
+        guard count >= 0, left >= count, count > 0 else { return nil }
+        return String(bytes: bytes[at..<at + count], encoding: .ascii)
     }
 
     /// A number in the bytes that follow, big-endian as both formats ask.

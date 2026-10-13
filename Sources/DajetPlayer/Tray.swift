@@ -204,7 +204,10 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         if menu === root {
             whole(menu)
-        } else if let playlist = menu.representedObject as? Playlist {
+        } else if let playlist = menu.parentItem?.representedObject as? Playlist {
+            // A menu has nothing of its own to be known by, and does not need
+            // one: the item it hangs from is the thing that says whose tracks
+            // these are, and it is reachable from the menu itself.
             tracks(of: playlist, in: menu)
         }
     }
@@ -329,10 +332,12 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for playlist in self.playlists.list {
                 let list = NSMenu(title: playlist.name)
                 list.delegate = self
-                list.representedObject = playlist
                 list.autoenablesItems = false
                 let one = NSMenuItem(title: playlist.name, action: nil, keyEquivalent: "")
                 one.submenu = list
+                // Which folder this submenu is: carried by the item it hangs
+                // from, because a menu has no pocket of its own to carry it in.
+                one.representedObject = playlist
                 one.image = Icon.glyph(playlist.there ? "folder" : "exclamationmark.triangle")
                 one.isEnabled = playlist.there
                 // The folder the player is walking, marked the way the side

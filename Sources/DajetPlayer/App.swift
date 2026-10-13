@@ -622,7 +622,7 @@ struct PlayerView: View {
     /// through. Nothing is playing and it says so by going quiet rather than
     /// by going away.
     private func playButton(tight: Bool) -> some View {
-        let side = tight ? 44 : 52
+        let side: CGFloat = tight ? 44 : 52
         return Button { engine.toggle() } label: {
             Image(systemName: engine.state == .playing ? "pause.fill" : "play.fill")
                 .font(.system(size: tight ? 15 : 17, weight: .bold))
