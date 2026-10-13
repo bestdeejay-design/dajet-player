@@ -204,10 +204,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         if menu === root {
             whole(menu)
-        } else if let playlist = menu.parentItem?.representedObject as? Playlist {
-            // A menu has nothing of its own to be known by, and does not need
-            // one: the item it hangs from is the thing that says whose tracks
-            // these are, and it is reachable from the menu itself.
+        } else if let folder = menu as? FolderMenu, let playlist = folder.playlist {
             tracks(of: playlist, in: menu)
         }
     }
@@ -330,14 +327,12 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             for playlist in self.playlists.list {
-                let list = NSMenu(title: playlist.name)
+                let list = FolderMenu(title: playlist.name)
+                list.playlist = playlist
                 list.delegate = self
                 list.autoenablesItems = false
                 let one = NSMenuItem(title: playlist.name, action: nil, keyEquivalent: "")
                 one.submenu = list
-                // Which folder this submenu is: carried by the item it hangs
-                // from, because a menu has no pocket of its own to carry it in.
-                one.representedObject = playlist
                 one.image = Icon.glyph(playlist.there ? "folder" : "exclamationmark.triangle")
                 one.isEnabled = playlist.there
                 // The folder the player is walking, marked the way the side
@@ -558,6 +553,18 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         build(inside)
         return item
     }
+}
+
+/// The submenu of one folder.
+///
+/// An `NSMenu` has no pocket of its own: no `representedObject`, and no way of
+/// being asked whose tracks it is about to show. It could be reached through
+/// the item it hangs from, but that is a walk through the menu above it at the
+/// one moment the menu above it is being rebuilt, so the answer is kept where
+/// the question is asked: on the submenu itself.
+final class FolderMenu: NSMenu {
+    /// The folder whose tracks this menu is asked for.
+    var playlist: Playlist?
 }
 
 /// The pictures the tray wears, drawn rather than loaded: the app's own wave
