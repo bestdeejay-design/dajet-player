@@ -15,6 +15,17 @@ import SwiftUI
 // menu can't be dragged into and can't be asked a second thing by
 // right-clicking it, and a folder you keep music in wants both.
 //
+// The column has no band of its own, no toggle in it and no button at its foot
+// (P-10). The toggle is the window's toolbar's, at the leading end beside the
+// traffic lights, and it is there whether the column is out or away — which is
+// the whole of what a toggle has to be, and is why the column does not need a
+// second one. What is left of the band a hand drew there was a guess at where
+// the traffic lights are and a strip that took a drag on the window's behalf;
+// the toolbar is given both by the platform. The foot's "Add Folder…" was the
+// third way of doing a thing the toolbar's button, the tray's menu and ⌘O
+// already do, in the one window that shows all of them at once — and an element
+// that duplicates the toolbar is an element the owner asked to have out.
+//
 // A click on a playlist shows its tracks and plays it — opening a folder plays
 // it, which is the contract the playback core was built on and is not this
 // wave's to change. A click on a track plays that track, and the track that is
@@ -31,26 +42,15 @@ struct SideMenu: View {
     /// has just come out, or a folder has just been added — so that the tracks
     /// shown are the folder's tracks now and not the ones from an hour ago.
     var refresh: Int
-    var close: () -> Void
-    var add: () -> Void
-    /// A drop that lands on the column's own band, in the window's own words
-    /// (see PlayerView.accept): a real view takes the drag before SwiftUI
-    /// hears about it, so a folder let go over the band has to be carried to
-    /// the same place the window's own drop goes, or it is a folder let go
-    /// over a band that swallowed it.
-    var drop: ([URL]) -> Void
-
     /// The playlist whose tracks are shown. One at a time, which is what a
     /// column this narrow can hold honestly.
     @State private var showing: Playlist.ID?
     /// The width the column had when its edge was picked up.
     @State private var grabbed: Double?
     @State private var onEdge = false
-    @State private var hoveringAdd = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            band
             if playlists.isEmpty {
                 empty
             } else {
@@ -58,10 +58,14 @@ struct SideMenu: View {
                 list
             }
             Spacer(minLength: 0)
-            foot
         }
-        .frame(width: CGFloat(span))
-        .frame(maxHeight: .infinity, alignment: .top)
+        // The width is the window's decision and not this column's: the player
+        // clamps it to the room there is, so that a window narrower than the
+        // column is a window with a drawer over the player rather than a column
+        // hanging off the edge of the glass (P-10). What the column owns is the
+        // range it is pulled between, and the edge that pulls it.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, Metrics.gap)
         // What the column is made of: the window's own surface and nothing
         // else. Deliberately *not* a second pane of glass — a material laid
         // under a material is the one thing the platform's own guidance says
@@ -87,36 +91,6 @@ struct SideMenu: View {
             showing = match.id
         }
         .accessibilityElement(children: .contain)
-    }
-
-    // MARK: - the column's own band
-
-    /// The band along the column's top: the toggle, on the same line and at
-    /// the same place as the one in the window's own corner, so a hand that
-    /// has found it once has found it for good. The traffic lights keep their
-    /// corner, as they do in the browser.
-    private var band: some View {
-        HStack(spacing: 4) {
-            Color.clear.frame(width: Metrics.lights)
-            Door(
-                icon: "sidebar.leading",
-                help: "Hide the side menu   ⌥⌘S",
-                on: true,
-                act: close
-            )
-            Spacer(minLength: 0)
-        }
-        .padding(.trailing, 14)
-        .frame(height: Metrics.bar)
-        // What is left of the band drags the window: the toggle's own run is
-        // refused (see DragStrip), so a click meant for it lands on it.
-        .background(
-            DragStrip(
-                leading: Metrics.lights + Metrics.door + 8,
-                trailing: 12,
-                files: drop
-            )
-        )
     }
 
     // MARK: - what is in it
@@ -145,13 +119,14 @@ struct SideMenu: View {
     /// Nothing in the menu at all, which is where a fresh copy of the player
     /// starts: no folder is built in, and nothing plays until one is added
     /// (P-06R). The column says so rather than sitting blank and looking
-    /// broken.
+    /// broken — and it points at the two ways in, which are the toolbar's and
+    /// the window's, and not a third button of its own (P-10).
     private var empty: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No playlists yet.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Palette.muted)
-            Text("A folder added here stays here, and plays.")
+            Text("Add a folder above, or drop one on the window: it stays here, and it plays.")
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -159,41 +134,6 @@ struct SideMenu: View {
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// The foot: the one way to add a folder, in words rather than in a glyph,
-    /// because it is the thing this column is for.
-    private var foot: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(Palette.hairline)
-                .frame(height: 1)
-                .padding(.horizontal, 12)
-            Button(action: add) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 14)
-                    Text("Add Folder…")
-                        .font(.system(size: 12))
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(hoveringAdd ? Palette.ink : Palette.muted)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous)
-                        .fill(hoveringAdd ? Palette.hover : Color.clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .onHover { hoveringAdd = $0 }
-            .help("A folder of music — \(PlayerEngine.kinds). ⌘O does the same.")
-            .accessibilityLabel("Add Folder")
-        }
     }
 
     /// The column's edge: pull it to size the column, double-click it to put

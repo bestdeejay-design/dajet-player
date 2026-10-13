@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 // The window itself, and the surface that covers it: the two things the look
-// is actually made of (P-06R — the owner's final word on it).
+// is actually made of (P-06R — the owner's final word on it — and P-10, which
+// is the owner's second word about the light one).
 //
 //   · LIGHT — glass, over the whole surface of the window. A system material
 //     does the blurring: an `NSVisualEffectView` with `behindWindow` blending,
@@ -10,10 +11,26 @@ import SwiftUI
 //     window that is transparent for it to be seen through. Over the material
 //     there is a lift, a sheen down from the top edge and a shadow at the
 //     foot — because a blurred rectangle on its own reads as a grey rectangle
-//     unless something in it says which way the light comes from. This is the
-//     part the first attempt at this version got wrong: the material was put
-//     in without the wash over it and without a window to see the desktop
-//     through, and it came out as a flat surface nobody would call glass.
+//     unless something in it says which way the light comes from.
+//
+//     Which material, and how much wash over it, is the whole of what P-10
+//     changed here: `.menu` was too much of both. A menu's material is made to
+//     be read against whatever is behind it, which means a tint and a blur
+//     strong enough to flatten a desktop of any colour — and behind a whole
+//     window, rather than behind four lines of a context menu, that reads as
+//     frosted rather than as glass. `.underWindowBackground` is the material
+//     for the background of a window's own content: the least blur of the ones
+//     that still have a surface, and the one that leaves the desktop legible
+//     behind it, which is what the owner asked for and what a pane of glass
+//     over a desk actually does. The washes over it are lighter for the same
+//     reason — a lift and a sheen are there to say which way the light comes
+//     from, and a heavy one says it by making the pane milky.
+//
+//     (The first attempt at this version used `.underWindowBackground` too, and
+//     came out as nothing at all — but that was in a window that was still
+//     opaque, where a `behindWindow` material has no desktop to sample and
+//     draws its own tint instead. See `WindowDress`, which is where the window
+//     is told that it is not opaque.)
 //
 //   · DARK — matte, over the whole surface of the window. One almost-black
 //     colour, opaque, with no material, no translucency and nothing grey in
@@ -22,11 +39,11 @@ import SwiftUI
 //     the window says so about itself (`isOpaque`).
 //
 // Both of them are drawn under everything and over the whole window, the
-// title bar's band included — which is what a transparent title bar and a
+// toolbar's band included — which is what a transparent title bar and a
 // full-size content view are for — so that the look is the window and not a
-// panel in it. The traffic lights keep their corner in both, and the window's
-// own corners are macOS's: continuous, and the same curve the system uses for
-// the browser next door.
+// panel in it. The traffic lights keep their corner in both, the toolbar keeps
+// its band, and the window's own corners are macOS's: continuous, and the same
+// curve the system uses for the browser next door.
 
 /// The whole surface of the window, under everything it shows.
 struct Surface: View {
@@ -46,26 +63,26 @@ struct Surface: View {
 
 /// The light theme: one pane of glass over the whole window.
 private struct Glass: View {
+    /// The material the pane is: the lightest blur that is still a surface of
+    /// its own, so that the desktop behind the window is what is seen through
+    /// it rather than what is suggested by it. The ladder, were it ever wanted
+    /// again, runs from here through `.sidebar` and `.header` to `.menu` and
+    /// `.popover` — each step more tint and more blur than the last, and each
+    /// one a material made for something smaller than a whole window.
+    private static let material: NSVisualEffectView.Material = .underWindowBackground
+
     var body: some View {
         ZStack {
-            // The blur, and the desktop behind it. Nothing here draws a blur
-            // of its own: a system material is cheaper, sharper, and the only
-            // kind that blends with what is on the other side of the window
-            // at all.
-            //
-            // Which material is not a detail. `.underWindowBackground` is what
-            // a transparent window's *background* is read through, and in this
-            // window it came out as nothing at all (the first attempt at this
-            // version used it, and the owner's word for the result was: no
-            // glass). `.menu` is a material with a surface of its own — a tint
-            // and a blur strong enough to be seen over a desktop of any
-            // colour — and it is the one the browser's own glass panel wears
-            // (dajet-browser, SiteCard.swift), so the two apps fog the same
-            // way. The light comes from above in the two washes over it.
-            VisualEffect(material: .menu, blending: .behindWindow)
+            // The blur, and the desktop behind it. Nothing here draws a blur of
+            // its own: a system material is cheaper, sharper, and the only kind
+            // that blends with what is on the other side of the window at all.
+            VisualEffect(material: Self.material, blending: .behindWindow)
             // What is over it: the lift that makes a frosted pane frosted, the
             // sheen from the top edge down, and the soft shadow a pane casts
-            // along its foot.
+            // along its foot. All three are lighter than the first version of
+            // this glass wore them, because the pane underneath is now a window
+            // onto the desk rather than a wall of frost, and a heavy wash over a
+            // window is a curtain.
             Palette.Glass.lift
             LinearGradient(
                 colors: [Palette.Glass.sheen, Color.clear],
@@ -79,7 +96,7 @@ private struct Glass: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 160)
+                .frame(height: 120)
             }
         }
         .allowsHitTesting(false)
@@ -146,7 +163,8 @@ struct VisualEffect: NSViewRepresentable {
 
 /// The window itself, told what the surface is: transparent where the glass
 /// needs the desktop behind it, opaque where the matte is the whole window,
-/// and with the title bar out of the way in both.
+/// and with the title bar out of the way in both — which is what lets the
+/// system's own toolbar sit in a band of the same glass as everything under it.
 ///
 /// It is set from a real view inside the window, because that is the only
 /// place SwiftUI lets an app reach its own window from — and it is set again
@@ -194,15 +212,23 @@ struct WindowDress: NSViewRepresentable {
 
         private func dress() {
             guard let window else { return }
-            // The band along the top is ours; the three buttons in the corner
-            // are the system's, and stay exactly where macOS keeps them.
+            // The band along the top is the system's own toolbar, and the three
+            // buttons in the corner are the system's too: the band is made
+            // transparent so that what shows through it is this window's own
+            // surface rather than a second material laid over the first, and
+            // the line the platform draws between a toolbar and its content is
+            // asked not to be, because there is nothing on either side of it
+            // but the same pane of glass.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.titlebarSeparatorStyle = .none
             window.styleMask.insert(.fullSizeContentView)
-            // The window is dragged by the strip in the band (see DragStrip),
-            // and by nothing else: a drag that means to take a slider, an edge
-            // or a track must never carry the window off with it.
+            // The window is dragged by its title bar, which is what a title bar
+            // is for and what the toolbar's band is: a drag on the body takes a
+            // slider, an edge or a track, and never carries the window off with
+            // it. Double-clicking the band zooms, as the Mac's own System
+            // Settings say it should, because the band is the system's again
+            // rather than a strip that had to be taught.
             window.isMovableByWindowBackground = false
             window.isMovable = true
             window.hasShadow = true
@@ -220,134 +246,6 @@ struct WindowDress: NSViewRepresentable {
                 window.isOpaque = true
                 window.backgroundColor = Palette.Pair.ground
             }
-        }
-    }
-}
-
-/// The band along the top of the window: drag it to move the window,
-/// double-click it to fill the screen, drop music on it to play it.
-///
-/// With the title bar hidden, nothing that is left in the band answers a drag
-/// — the interface swallows the clicks a title bar would have handled, and
-/// they have to be put back. They are put back here rather than with
-/// `isMovableByWindowBackground`, which would make a drag on the progress bar
-/// mean "move the window".
-///
-/// A real view sits under SwiftUI's drawing and takes the click first, so the
-/// runs of the band that belong to something drawn in them — the traffic
-/// lights, the toggle beside them, the buttons at the other end — are refused,
-/// and the click falls through to what is there. The browser's DragStrip is
-/// this view, to the letter.
-struct DragStrip: NSViewRepresentable {
-    /// The run at the leading end that belongs to whatever is drawn there.
-    var leading: CGFloat = 0
-    /// The run at the trailing end that belongs to a button.
-    var trailing: CGFloat = 0
-    /// Music dropped on the band, in the same words the window's own drop
-    /// speaks: a real view takes the drag as well as the click, and without
-    /// this the band would simply swallow a folder let go over it.
-    var files: ([URL]) -> Void = { _ in }
-    /// Something is being dragged over the band, or has left it.
-    var targeted: (Bool) -> Void = { _ in }
-
-    func makeNSView(context: Context) -> Strip { Strip() }
-
-    func updateNSView(_ view: Strip, context: Context) {
-        view.leading = leading
-        view.trailing = trailing
-        view.files = files
-        view.targeted = targeted
-    }
-
-    final class Strip: NSView {
-        var leading: CGFloat = 0
-        var trailing: CGFloat = 0
-        var files: ([URL]) -> Void = { _ in }
-        var targeted: (Bool) -> Void = { _ in }
-
-        private var pressed: NSEvent?
-        private var moved = false
-
-        override init(frame frameRect: NSRect) {
-            super.init(frame: frameRect)
-            registerForDraggedTypes([.fileURL])
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError() }
-
-        /// The strip moves the window and answers the double-click itself.
-        /// Left to say yes, AppKit takes both on too, and a double-click
-        /// answered twice — by AppKit on the press, here on the release —
-        /// ends where it started.
-        override var mouseDownCanMoveWindow: Bool { false }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            let inside = convert(point, from: superview)
-            guard inside.x >= leading, inside.x <= bounds.width - trailing else { return nil }
-            return super.hitTest(point)
-        }
-
-        override func mouseDown(with event: NSEvent) {
-            pressed = event
-            moved = false
-        }
-
-        /// A little slack, so a shaky click is still a click; past it, the
-        /// drag is handed to the system's own window drag, which is what makes
-        /// it snap and tile the way any window does.
-        override func mouseDragged(with event: NSEvent) {
-            guard let window, let pressed, !moved else { return }
-            let dx = event.locationInWindow.x - pressed.locationInWindow.x
-            let dy = event.locationInWindow.y - pressed.locationInWindow.y
-            if abs(dx) < 3 && abs(dy) < 3 { return }
-            moved = true
-            window.isMovable = true
-            window.performDrag(with: pressed)
-        }
-
-        /// A double-click does what a title bar's does, following the Mac's
-        /// own System Settings › Desktop & Dock › double-click a title bar.
-        override func mouseUp(with event: NSEvent) {
-            guard let window, !moved, event.clickCount == 2 else { return }
-            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
-            case "Minimize": window.miniaturize(nil)
-            case "None": break
-            default: window.zoom(nil)
-            }
-        }
-
-        // MARK: - what is dropped on it
-
-        override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-            guard !brought(sender).isEmpty else { return [] }
-            targeted(true)
-            return .copy
-        }
-
-        override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-            brought(sender).isEmpty ? [] : .copy
-        }
-
-        override func draggingExited(_ sender: NSDraggingInfo?) {
-            targeted(false)
-        }
-
-        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-            targeted(false)
-            let found = brought(sender)
-            guard !found.isEmpty else { return false }
-            files(found)
-            return true
-        }
-
-        /// The files a drag is carrying, and nothing else: an address dragged
-        /// out of a browser is not a file URL, is not accepted, and never
-        /// reaches the player.
-        private func brought(_ sender: NSDraggingInfo) -> [URL] {
-            let board = sender.draggingPasteboard
-            let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-            return (board.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
         }
     }
 }

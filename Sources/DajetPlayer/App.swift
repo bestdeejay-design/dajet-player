@@ -12,12 +12,26 @@ import UniformTypeIdentifiers
 // subject. So the middle is the one track that matters, and the column is
 // everything else.
 //
+// Along the top of the window there is a toolbar, and it is the system's own
+// (P-10): the side menu's toggle at the leading end beside the traffic lights,
+// and the two things a player can be told about itself — a folder, and which
+// of the three looks it wears — at the other. A band drawn by hand was what
+// this window had before, and a hand-drawn band is a band that has to guess
+// where the traffic lights are, put window dragging back by hand, and answer a
+// double-click on a title bar it does not have; a toolbar is given all three by
+// the platform, in the place macOS puts them, and it costs nothing in the
+// window's body. Nothing else in the body is a button that belongs at the top.
+//
 // The side menu is the browser's own column: the same width, the same spring
 // (Motion.glide), pulled out by a hand on the window's leading edge and sized
-// by a hand on its own edge, with a toggle in the corner that is always there
-// in both states. Inside it are playlists — folders of music, added by ⌘O or
-// by being dropped on the window, kept until they are removed, and there for
-// the next run (Playlists.swift, Side.swift).
+// by a hand on its own edge, with the toolbar's toggle there in both states.
+// Inside it are playlists — folders of music, added by ⌘O or by being dropped
+// on the window, kept until they are removed, and there for the next run
+// (Playlists.swift, Side.swift). The column is never wider than the window it
+// is in and never shoves the player out of it: on a window too narrow for both,
+// the column goes *over* the player, which is what a drawer does, rather than
+// squeezing the transport until it runs off the edge (P-10 — the layout the
+// owner sent a picture of).
 //
 // The look covers the whole window — glass in the light theme, matte
 // almost-black in the dark — and the window itself is dressed for it
@@ -28,15 +42,17 @@ import UniformTypeIdentifiers
 // arrows walk the queue beside it, the Mac's own media keys and its Now
 // Playing card are the app's, volume and mute are remembered, and a folder
 // dropped on the window plays at once — all of it the engine's, exactly as
-// P-03 to P-05 left it.
+// P-03 to P-05 left it. And the player is not the window's any more: the tray
+// owns it, so closing the window leaves the music playing and the menu bar in
+// charge of it (Tray.swift).
 
 @main
 struct DajetPlayerApp: App {
-    /// The player, made once for the life of the app.
-    @StateObject private var engine = PlayerEngine()
-    /// The playlists, and the file they live in — read before the window is,
-    /// so that the menu opens with them already in it.
-    @StateObject private var playlists = Playlists()
+    /// The tray: the app's own delegate, and the thing that owns the player and
+    /// the playlists for as long as the app runs. Owned there rather than here
+    /// because a window can be closed and the player cannot — the music goes on
+    /// with no window at all, and the menu bar is where it is answered for.
+    @NSApplicationDelegateAdaptor(Tray.self) private var tray
 
     init() {
         // The look that was chosen last time, put on the app before the window
@@ -47,12 +63,22 @@ struct DajetPlayerApp: App {
     }
 
     var body: some Scene {
-        Window("Dajet Player", id: "player") {
-            PlayerView(engine: engine, playlists: playlists)
-                .frame(minWidth: 620, minHeight: 430)
+        Window("Dajet Player", id: PlayerView.windowID) {
+            PlayerView(engine: tray.engine, playlists: tray.playlists)
+                // A formal square, and the column's own resting width: the
+                // window is never smaller than the side menu is wide, and never
+                // narrower than it is tall (P-10). What the player needs to be
+                // comfortable is more than this, and a window resized down to
+                // here is a window with a drawer over it rather than one with
+                // its transport hanging off the edge.
+                .frame(minWidth: Metrics.side, minHeight: Metrics.side)
         }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 980, height: 640)
+        // The system's own toolbar, with no title in it: the buttons are the
+        // window's, the traffic lights are macOS's, and the band they share is
+        // transparent, so the glass underneath is the glass of the whole window
+        // rather than of everything below a bar (see Window.swift).
+        .windowToolbarStyle(.unified(showsTitle: false))
+        .defaultSize(width: 560, height: 420)
         // The one thing the menu bar has to offer that the window does not
         // already show all the time: a folder. ⌘O is the menu's and only the
         // menu's — a shortcut on a button that is not on screen is no shortcut
@@ -60,7 +86,7 @@ struct DajetPlayerApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add Folder…") {
-                    Chooser.folder(into: playlists, for: engine)
+                    Chooser.folder(into: tray.playlists, for: tray.engine)
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
@@ -70,6 +96,10 @@ struct DajetPlayerApp: App {
 
 /// The window, and everything in it.
 struct PlayerView: View {
+    /// The id the scene keeps this window under, and the tray looks it up by
+    /// when it is asked to bring the player back.
+    static let windowID = "player"
+
     @ObservedObject var engine: PlayerEngine
     @ObservedObject var playlists: Playlists
 
@@ -100,39 +130,61 @@ struct PlayerView: View {
     @State private var hoveringPlay = false
 
     @Environment(\.colorScheme) private var scheme
+    /// SwiftUI's own way of asking for this window back, which is what the tray
+    /// does when the window has been closed and there is nothing among the
+    /// app's windows to bring forward.
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // The look, under everything: the whole window, the title bar's
-            // band included.
+            // The look, under everything: the whole window, the toolbar's band
+            // included.
             Surface()
             // The window itself, told what the surface is.
             WindowDress(glass: scheme == .light)
                 .frame(width: 0, height: 0)
 
-            // The player, in whatever is left of the window beside the menu —
-            // and moving over as the menu comes out, on the menu's own spring,
-            // so that the two are one gesture rather than two.
-            player
-                .padding(.leading, out)
+            // Everything else, laid out against the room the window actually
+            // has — which is the room below the toolbar, and is asked of the
+            // layout rather than assumed, because a window that can be resized
+            // down to a square of 232 points is a window whose contents have to
+            // know how narrow they are.
+            GeometryReader { room in
+                let wide = room.size.width
+                // The column is never wider than the window it is in.
+                let column = min(span, max(0, wide))
+                // How far the player may be shoved over: far enough for the
+                // column, and never so far that there is no player left. A
+                // window too narrow for both gets the column *over* the player,
+                // which is what a drawer does, instead of a transport squeezed
+                // until it runs off the edge of the glass.
+                let reach = max(0, wide - Metrics.playerMin)
+                // How far the column has come out: all of itself while it is
+                // open, and the hand's own worth while one is pulling it.
+                let travel = menu ? column : min(max(pull, 0), column)
+                ZStack(alignment: .topLeading) {
+                    player(tight: wide - min(travel, reach) < Metrics.roomy)
+                        .padding(.leading, min(travel, reach))
 
-            // The window's leading edge: a hand pulling the menu out.
-            puller
+                    // The window's leading edge: a hand pulling the menu out.
+                    puller
 
-            // The menu, over the player while it is on its way out and beside
-            // it once it is there. It is never in the way of anything while it
-            // is away: away means off the window's edge, where nothing can be
-            // clicked, and not merely invisible.
-            SideMenu(
-                engine: engine,
-                playlists: playlists,
-                span: $sideSpan,
-                refresh: fresh,
-                close: { shut() },
-                add: { Chooser.folder(into: playlists, for: engine) },
-                drop: { accept($0) }
-            )
-            .offset(x: -span + out)
+                    // The menu, over the player while it is on its way out and
+                    // beside it once it is there. It is never in the way of
+                    // anything while it is away: away means off the window's
+                    // edge, where nothing can be clicked, and not merely
+                    // invisible.
+                    SideMenu(
+                        engine: engine,
+                        playlists: playlists,
+                        span: $sideSpan,
+                        refresh: fresh
+                    )
+                    .frame(width: column)
+                    .offset(x: travel - column)
+                }
+                .frame(width: wide, height: room.size.height, alignment: .topLeading)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The window takes what the Finder can carry — a file, a folder, or a
@@ -144,6 +196,45 @@ struct PlayerView: View {
             if taking { dropHint }
         }
         .animation(Motion.quick, value: taking)
+        .toolbar {
+            // The side menu's toggle, at the leading end and beside the traffic
+            // lights, where a toggle for a column on the left belongs and where
+            // macOS puts one: visible whether the column is out or away, which
+            // is the whole of what a toggle has to be.
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    if menu { shut() } else { open() }
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                }
+                .buttonStyle(.borderless)
+                .help(menu
+                      ? "Hide the side menu   ⌥⌘S"
+                      : "Show the side menu — playlists and their tracks   ⌥⌘S")
+                .accessibilityLabel(menu ? "Hide the side menu" : "Show the side menu")
+            }
+            // The two things a player can be told about itself: a folder, and
+            // which of the three looks it wears. Both were icons in a band of
+            // the window's own before, and both are the platform's now.
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Chooser.folder(into: playlists, for: engine)
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Add a folder of music — \(PlayerEngine.kinds)   ⌘O")
+                .accessibilityLabel("Add Folder")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: walkLook) {
+                    Image(systemName: look.icon)
+                }
+                .buttonStyle(.borderless)
+                .help("Theme — \(look.title); click for \(look.next.title)")
+                .accessibilityLabel("Theme")
+            }
+        }
         .onAppear {
             // Again, in case the app was not there yet when it was asked for
             // the first time (see DajetPlayerApp's init).
@@ -152,6 +243,10 @@ struct PlayerView: View {
             // The reading of the files the menu is about to show, if any, is
             // as old as the last time it was out.
             fresh += 1
+            // The tray's last resort for bringing this window back, handed over
+            // while there is one to hand it from.
+            let reopen = openWindow
+            Tray.reopen = { reopen(id: Self.windowID) }
         }
         .onDisappear {
             if let keys { NSEvent.removeMonitor(keys) }
@@ -161,13 +256,8 @@ struct PlayerView: View {
 
     // MARK: - the shape of the window
 
-    /// The width the menu occupies in the window: all of it while it is open,
-    /// the hand's own worth while one is pulling it out, and nothing at all
-    /// otherwise.
-    private var out: CGFloat {
-        menu ? span : min(max(pull, 0), span)
-    }
-
+    /// The width the menu wants in the window, which is the width it was last
+    /// pulled to, between the two it lives between.
     private var span: CGFloat {
         CGFloat(min(max(sideSpan, Double(Metrics.sideMin)), Double(Metrics.sideMax)))
     }
@@ -197,15 +287,14 @@ struct PlayerView: View {
     /// only decides where it settles, which is what makes an edge feel like an
     /// edge rather than like a button.
     ///
-    /// Below the top band, which belongs to the window's own drag, and only
-    /// while the menu is away — an open menu has its own edge, and that one is
-    /// for sizing it.
+    /// Only while the menu is away — an open menu has its own edge, and that
+    /// one is for sizing it. The toolbar's own band is not part of it: that
+    /// band belongs to the window's drag, and to the buttons in it.
     private var puller: some View {
         Color.clear
             .frame(width: Metrics.pull)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .padding(.top, Metrics.bar)
             .allowsHitTesting(!menu)
             .gesture(
                 DragGesture(minimumDistance: 2, coordinateSpace: .global)
@@ -232,71 +321,34 @@ struct PlayerView: View {
 
     // MARK: - the player
 
-    /// The player: the band, the one track that matters, and the transport.
-    private var player: some View {
+    /// The player: the one track that matters, and the transport under it. No
+    /// band of its own along the top — that is the window's toolbar now, and
+    /// the first thing in the body of this window is the music.
+    ///
+    /// `tight` is the player's own verdict on the room it has been given, and
+    /// everything below it that can be drawn two ways is: a window resized down
+    /// is a window that keeps the whole player in it, in less room, rather than
+    /// one that loses the end of a slider off its edge.
+    private func player(tight: Bool) -> some View {
         VStack(spacing: 0) {
-            helm
-            Spacer(minLength: 12)
-            middle
-            Spacer(minLength: 12)
-            foot
+            Spacer(minLength: tight ? 4 : 12)
+            middle(tight: tight)
+            Spacer(minLength: tight ? 4 : 12)
+            foot(tight: tight)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The band along the top of the window: the menu's toggle in the corner
-    /// beside the traffic lights — visible whether the menu is out or away,
-    /// which is the whole of what a toggle has to be — and the two things a
-    /// player can be told about itself at the other end. The rest of the band
-    /// is the window's own: drag it to move the window, double-click it to
-    /// fill the screen, drop a folder on it to play (see DragStrip).
-    private var helm: some View {
-        HStack(spacing: 4) {
-            if !menu {
-                // The traffic lights' corner, and then ours.
-                Color.clear.frame(width: Metrics.lights)
-                Door(
-                    icon: "sidebar.leading",
-                    help: "Show the side menu — playlists and their tracks   ⌥⌘S",
-                    act: open
-                )
-            }
-            Spacer(minLength: 0)
-            Door(
-                icon: "folder.badge.plus",
-                help: "Add a folder of music — \(PlayerEngine.kinds)   ⌘O",
-                act: { Chooser.folder(into: playlists, for: engine) }
-            )
-            Door(
-                icon: look.icon,
-                help: "\(look.title) — click for \(look.next.title)",
-                act: walkLook
-            )
-        }
-        .padding(.trailing, 16)
-        .frame(height: Metrics.bar)
-        .background(
-            DragStrip(
-                // Whatever is drawn in the band is its own: the runs the
-                // buttons sit in are refused, and the click lands on them.
-                leading: menu ? 0 : Metrics.lights + Metrics.door + 8,
-                trailing: 16 + Metrics.door * 2 + 4,
-                files: { accept($0) },
-                targeted: { taking = $0 }
-            )
-        )
     }
 
     /// The middle of the window: what is playing, or the invitation to drop
     /// something on it, or whatever the player has to say instead of a track.
     @ViewBuilder
-    private var middle: some View {
+    private func middle(tight: Bool) -> some View {
         if let track = engine.track {
-            nowPlaying(track)
+            nowPlaying(track, tight: tight)
         } else if let note = engine.note {
-            saying(note)
+            saying(note, tight: tight)
         } else {
-            invitation
+            invitation(tight: tight)
         }
     }
 
@@ -304,19 +356,23 @@ struct PlayerView: View {
     /// list of the folder is in the menu, where it is a list of somewhere,
     /// and the window in front of the listener is the one track that is
     /// actually being heard.
-    private func nowPlaying(_ track: URL) -> some View {
-        VStack(spacing: 20) {
+    ///
+    /// The sleeve is whatever the file said — its own embedded cover, or the
+    /// picture lying beside it in the folder, or nothing at all, which is the
+    /// engine's business and not this one's (see Artwork.swift).
+    private func nowPlaying(_ track: URL, tight: Bool) -> some View {
+        VStack(spacing: tight ? 12 : 20) {
             Cover(cover: engine.cover)
             VStack(spacing: 5) {
                 Text(engine.title ?? track.deletingPathExtension().lastPathComponent)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.system(size: tight ? 16 : 19, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(track.lastPathComponent)
                 if let artist = engine.artist {
                     Text(artist)
-                        .font(.system(size: 13))
+                        .font(.system(size: tight ? 12 : 13))
                         .foregroundStyle(Palette.muted)
                         .lineLimit(1)
                 }
@@ -330,7 +386,7 @@ struct PlayerView: View {
             .frame(maxWidth: 420)
             .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 36)
+        .padding(.horizontal, tight ? 14 : 36)
     }
 
     /// What is under the title: the album it came off, and where in the queue
@@ -346,43 +402,45 @@ struct PlayerView: View {
     /// Nothing has been opened, which is where a fresh copy of the player
     /// starts and where it stays: nothing is built in, and no folder plays
     /// itself (P-06R).
-    private var invitation: some View {
-        VStack(spacing: 16) {
+    private func invitation(tight: Bool) -> some View {
+        VStack(spacing: tight ? 10 : 16) {
             Wave(crests: 2, height: 0.34)
                 .stroke(
                     Palette.accent,
                     style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                 )
-                .frame(width: 92, height: 40)
+                .frame(width: tight ? 64 : 92, height: tight ? 28 : 40)
             VStack(spacing: 5) {
                 Text("Drop a folder of music, or a few files.")
-                    .font(.system(size: 14))
+                    .font(.system(size: tight ? 13 : 14))
                     .foregroundStyle(Palette.ink)
+                    .multilineTextAlignment(.center)
                 Text("\(PlayerEngine.kinds)  ·  ⌘O adds a folder to the menu")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.faint)
+                    .multilineTextAlignment(.center)
             }
         }
-        .padding(.horizontal, 36)
+        .padding(.horizontal, tight ? 14 : 36)
     }
 
     /// The player has something to say that is not a track: nothing that was
     /// opened is music, or the queue has played itself out and the last of it
     /// is still there to be played again.
-    private func saying(_ note: String) -> some View {
-        VStack(spacing: 16) {
+    private func saying(_ note: String, tight: Bool) -> some View {
+        VStack(spacing: tight ? 10 : 16) {
             Wave(crests: 2, height: 0.3)
                 .stroke(
                     Palette.faint,
                     style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
                 )
-                .frame(width: 76, height: 32)
+                .frame(width: tight ? 56 : 76, height: tight ? 24 : 32)
             Text(note)
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.muted)
                 .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 36)
+        .padding(.horizontal, tight ? 14 : 36)
     }
 
     /// The foot of the window: how far into the track the player is and where
@@ -390,13 +448,13 @@ struct PlayerView: View {
     /// is the engine's — every button here is a hand on something the core
     /// already did in P-03 to P-05 — and only the drawing of it is this
     /// version's.
-    private var foot: some View {
-        VStack(spacing: 16) {
-            progress
-            transport
+    private func foot(tight: Bool) -> some View {
+        VStack(spacing: tight ? 10 : 16) {
+            progress(tight: tight)
+            transport(tight: tight)
         }
-        .padding(.horizontal, 28)
-        .padding(.bottom, 18)
+        .padding(.horizontal, tight ? 12 : 28)
+        .padding(.bottom, tight ? 12 : 18)
     }
 
     /// The line the track is drawn along, the two times at its ends, and the
@@ -407,10 +465,10 @@ struct PlayerView: View {
     /// track through every place the thumb passed. Let go, and the track is
     /// taken to that place, playing or paused as it was — which is exactly
     /// what the bar at the foot of the window has always done.
-    private var progress: some View {
-        HStack(spacing: 12) {
+    private func progress(tight: Bool) -> some View {
+        HStack(spacing: tight ? 8 : 12) {
             Text(clock(scrubbing ?? engine.position))
-                .frame(width: 46, alignment: .trailing)
+                .frame(width: tight ? 38 : 46, alignment: .trailing)
             GeometryReader { room in
                 let wide = room.size.width
                 ZStack(alignment: .leading) {
@@ -437,7 +495,7 @@ struct PlayerView: View {
                 withAnimation(Motion.quick) { hoveringBar = over }
             }
             Text(left)
-                .frame(width: 46, alignment: .leading)
+                .frame(width: tight ? 38 : 46, alignment: .leading)
         }
         .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(Palette.faint)
@@ -450,82 +508,129 @@ struct PlayerView: View {
         .accessibilityValue("\(Int((filled * 100).rounded())) percent")
     }
 
-    /// The transport: the two modes and the volume either side of the three
-    /// buttons that are always in the same place, which is where a hand
-    /// expects them and where the browser's own toolbar keeps its buttons too.
-    private var transport: some View {
-        HStack(spacing: 16) {
-            Door(
-                icon: "shuffle",
-                help: engine.shuffle
-                    ? "Shuffled — click to walk the queue in the order it was opened"
-                    : "In order — click to shuffle the queue",
-                on: engine.shuffle,
-                size: 30,
-                glyph: 13,
-                act: { engine.toggleShuffle() }
-            )
-            Door(
-                icon: engine.repeatMode == .one ? "repeat.1" : "repeat",
-                help: repeatHelp,
-                on: engine.repeatMode != .off,
-                size: 30,
-                glyph: 13,
-                act: { engine.cycleRepeat() }
-            )
+    /// The transport: the three buttons that are always in the same place, with
+    /// the two modes and the volume either side of them — and, in a window too
+    /// narrow for one row of all seven, the same seven in two rows instead.
+    ///
+    /// Nothing is dropped when the window shrinks and nothing is hidden behind
+    /// anything: a player whose shuffle button goes away at a narrow width is a
+    /// player that has taken a setting away because of the size of a window.
+    /// What changes is the air between them, and the row they are on.
+    @ViewBuilder
+    private func transport(tight: Bool) -> some View {
+        if tight {
+            VStack(spacing: 8) {
+                hands(tight: tight)
+                HStack(spacing: 10) {
+                    shuffleButton(tight: tight)
+                    repeatButton(tight: tight)
+                    Spacer(minLength: 8)
+                    muteButton(tight: tight)
+                    loudness(tight: tight)
+                }
+            }
+        } else {
+            HStack(spacing: 16) {
+                shuffleButton(tight: tight)
+                repeatButton(tight: tight)
 
-            Spacer(minLength: 18)
+                Spacer(minLength: 18)
 
+                hands(tight: tight)
+
+                Spacer(minLength: 18)
+
+                muteButton(tight: tight)
+                loudness(tight: tight)
+            }
+        }
+    }
+
+    /// The three that matter most, and the three that are always together: back,
+    /// play or pause, on.
+    private func hands(tight: Bool) -> some View {
+        HStack(spacing: tight ? 12 : 16) {
             Door(
                 icon: "backward.fill",
                 help: "Previous — the start of this track, once three seconds of it have gone by",
-                size: 34,
-                glyph: 15,
+                size: tight ? 30 : 34,
+                glyph: tight ? 14 : 15,
                 enabled: engine.count > 0,
                 act: { engine.previous() }
             )
-            playButton
+            playButton(tight: tight)
             Door(
                 icon: "forward.fill",
                 help: "Next track",
-                size: 34,
-                glyph: 15,
+                size: tight ? 30 : 34,
+                glyph: tight ? 14 : 15,
                 enabled: engine.count > 0,
                 act: { engine.next() }
             )
-
-            Spacer(minLength: 18)
-
-            Door(
-                icon: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                help: engine.muted ? "Muted — click to hear it again" : "Mute",
-                on: engine.muted,
-                size: 30,
-                glyph: 12,
-                act: { engine.toggleMute() }
-            )
-            Slider(value: loudness, in: 0...1)
-                .frame(width: 66)
-                .controlSize(.small)
-                .tint(Palette.accent)
-                .help("Volume — remembered between runs")
-                .accessibilityLabel("Volume")
         }
+    }
+
+    private func shuffleButton(tight: Bool) -> some View {
+        Door(
+            icon: "shuffle",
+            help: engine.shuffle
+                ? "Shuffled — click to walk the queue in the order it was opened"
+                : "In order — click to shuffle the queue",
+            on: engine.shuffle,
+            size: tight ? 26 : 30,
+            glyph: tight ? 12 : 13,
+            act: { engine.toggleShuffle() }
+        )
+    }
+
+    private func repeatButton(tight: Bool) -> some View {
+        Door(
+            icon: engine.repeatMode == .one ? "repeat.1" : "repeat",
+            help: repeatHelp,
+            on: engine.repeatMode != .off,
+            size: tight ? 26 : 30,
+            glyph: tight ? 12 : 13,
+            act: { engine.cycleRepeat() }
+        )
+    }
+
+    private func muteButton(tight: Bool) -> some View {
+        Door(
+            icon: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+            help: engine.muted ? "Muted — click to hear it again" : "Mute",
+            on: engine.muted,
+            size: tight ? 26 : 30,
+            glyph: tight ? 11 : 12,
+            act: { engine.toggleMute() }
+        )
+    }
+
+    /// How loud, in a slider that is as wide as the window has room for and no
+    /// wider: at a narrow width it is a short slider, and it is still the same
+    /// slider, remembering the same number between runs.
+    private func loudness(tight: Bool) -> some View {
+        Slider(value: volume, in: 0...1)
+            .frame(width: tight ? 44 : 66)
+            .controlSize(.small)
+            .tint(Palette.accent)
+            .help("Volume — remembered between runs")
+            .accessibilityLabel("Volume")
     }
 
     /// Play, or pause: the one button in the window that is a shape rather
     /// than a glyph, and the one thing in it that is the accent all the way
     /// through. Nothing is playing and it says so by going quiet rather than
     /// by going away.
-    private var playButton: some View {
-        Button { engine.toggle() } label: {
+    private func playButton(tight: Bool) -> some View {
+        let side = tight ? 44 : 52
+        return Button { engine.toggle() } label: {
             Image(systemName: engine.state == .playing ? "pause.fill" : "play.fill")
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: tight ? 15 : 17, weight: .bold))
                 .foregroundStyle(Palette.onAccent)
                 // A play triangle is wider on one side than the other; a
                 // single point of nudge puts it in the middle of the circle.
                 .offset(x: engine.state == .playing ? 0 : 1.5)
-                .frame(width: 52, height: 52)
+                .frame(width: side, height: side)
                 .background(Circle().fill(Palette.accent))
                 .contentShape(Circle())
                 .scaleEffect(hoveringPlay ? 1.04 : 1)
@@ -633,7 +738,7 @@ struct PlayerView: View {
     /// The volume slider's two directions: where the player is, and where a
     /// hand dragging it asks the player to be. The engine owns the volume — it
     /// is the thing that is heard, and the thing that remembers.
-    private var loudness: Binding<Float> {
+    private var volume: Binding<Float> {
         Binding(get: { engine.volume }, set: { engine.setVolume($0) })
     }
 
@@ -650,9 +755,10 @@ struct PlayerView: View {
     // MARK: - the looks
 
     /// Light, dark, or the Mac's own, walked round by the one button in the
-    /// band. Three states on a button this small are only legible while it
-    /// says which one it is in, so it wears the glyph of what is on and says
-    /// the rest in its tooltip.
+    /// toolbar — and by the tray's own submenu, which writes the same key and
+    /// is answered by the same `@AppStorage`. Three states on a button this
+    /// small are only legible while it says which one it is in, so it wears the
+    /// glyph of what is on and says the rest in its tooltip.
     private func walkLook() {
         let next = look.next
         lookName = next.rawValue
@@ -695,10 +801,6 @@ struct PlayerView: View {
     /// music on this player has always done and is not this wave's to change.
     /// Only folders are remembered — a handful of loose files is a queue and
     /// not a place, and the menu is a list of places.
-    private func accept(_ urls: [URL]) {
-        accept(urls, into: playlists, playing: engine)
-    }
-
     private func accept(_ urls: [URL], into playlists: Playlists, playing engine: PlayerEngine) {
         guard !urls.isEmpty else { return }
         for url in urls where isFolder(url) {
@@ -734,9 +836,11 @@ struct PlayerView: View {
     /// thing.
     ///
     /// One thing here is not a key of the player's own: ⌥⌘S, which is the side
-    /// menu — the browser's own shortcut for its column, and the reason it is
-    /// in the key monitor rather than on a button is that the toggle is not
-    /// always on screen.
+    /// menu — the browser's own shortcut for its column. It is in the key
+    /// monitor rather than on the toolbar's toggle because a monitor hears it
+    /// whether or not anything in the window has the keyboard, and because the
+    /// toggle is the one button in the window that a hand may be looking for
+    /// while the column is shut.
     private func watchKeys() {
         guard keys == nil else { return }
         let engine = engine
