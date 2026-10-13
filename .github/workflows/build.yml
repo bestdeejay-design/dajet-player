@@ -78,27 +78,34 @@ jobs:
           fi
 
       # The compiler's own words, where they can be read without opening a log
-      # in a browser: one annotation per error, with the file and the line, so
-      # that they land in the diff of the pull request as well.
+      # in a browser: one annotation per error and per warning, with the file
+      # and the line, so that they land in the diff of the pull request as well.
+      # A warning is not a failure and is not treated as one — but a warning
+      # nobody can see is a warning nobody will ever fix.
       - name: What the compiler said
-        if: failure()
+        if: always()
         run: |
           shopt -s nullglob
           said=0
           for log in "$RUNNER_TEMP"/*.log; do
             found=$(awk -v ws="${GITHUB_WORKSPACE%/}/" '
-              /error:/ {
+              function say(level, file, row, rest) {
+                if (file == "") { printf "::%s::%s\n", level, rest }
+                else { printf "::%s file=%s,line=%s::%s\n", level, file, row, rest }
+              }
+              /error: |warning: / {
                 line = $0
-                if (match(line, /^[^ ]+\.swift:[0-9]+:[0-9]+: error: /)) {
+                level = (line ~ /error: /) ? "error" : "warning"
+                if (match(line, /^[^ ]+\.swift:[0-9]+:[0-9]+: (error|warning): /)) {
                   head = substr(line, RSTART, RLENGTH)
                   rest = substr(line, RSTART + RLENGTH)
                   split(head, part, ":")
                   file = part[1]
                   sub(ws, "", file)
-                  printf "::error file=%s,line=%s::%s\n", file, part[2], rest
+                  say(level, file, part[2], rest)
                 } else {
                   sub(ws, "", line)
-                  printf "::error::%s\n", line
+                  say(level, "", "", line)
                 }
               }
             ' "$log" | sort -u | head -80)
@@ -107,13 +114,20 @@ jobs:
               said=1
             fi
           done
-          # Something failed that was not a compile error: the tail of the last
-          # log is better than silence.
-          if [ "$said" = 0 ]; then
+          [ "$said" = 1 ] && touch "$RUNNER_TEMP/said"
+          exit 0
+
+      # Something failed that was not a line the compiler recognised: the tail
+      # of the last log is better than silence.
+      - name: The tail of what went wrong
+        if: failure()
+        run: |
+          shopt -s nullglob
+          if [ ! -f "$RUNNER_TEMP/said" ]; then
             for log in "$RUNNER_TEMP"/*.log; do last="$log"; done
             if [ -n "${last:-}" ]; then
               tail -12 "$last" | while IFS= read -r line; do
-                printf '::error::%s\n' "${line//\%/%%}"
+                printf '::error::%s\n' "${line//%/%%}"
               done
             fi
           fi
