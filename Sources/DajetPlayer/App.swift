@@ -140,8 +140,10 @@ struct PlayerView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// The system's own action for the window's split view (macOS 14): what
     /// the toolbar's toggle calls, so that opening and closing the column is
-    /// the system's motion and never this window's (issue #15).
-    @Environment(\.toggleSidebar) private var toggleSidebar
+    /// the system's motion and never this window's (issue #15). The type is
+    /// said out loud because an environment value of a callable type is not
+    /// something the compiler will infer at the point of use.
+    @Environment(\.toggleSidebar) private var toggleSidebar: ToggleSidebarAction
     /// SwiftUI's own way of asking for this window back, which is what the tray
     /// does when the window has been closed and there is nothing among the
     /// app's windows to bring forward.
@@ -310,7 +312,12 @@ struct PlayerView: View {
             get: { presentation.sideOpen ? .all : .detailOnly },
             set: { shown in
                 switch shown {
-                case .all, .sidebar: presentation.sideOpen = true
+                    // What the system itself writes into the binding on macOS:
+                    // the column out is `.all`, the column away is `.detailOnly`.
+                    // (`NavigationSplitViewVisibility` has no `.sidebar` — that
+                    // one belongs to `NavigationSplitViewColumn`; `.automatic`
+                    // and `.doubleColumn` say nothing this window listens to.)
+                case .all: presentation.sideOpen = true
                 case .detailOnly: presentation.sideOpen = false
                 default: break
                 }
