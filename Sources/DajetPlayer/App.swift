@@ -138,12 +138,6 @@ struct PlayerView: View {
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    /// The system's own action for the window's split view (macOS 14): what
-    /// the toolbar's toggle calls, so that opening and closing the column is
-    /// the system's motion and never this window's (issue #15). The type is
-    /// said out loud because an environment value of a callable type is not
-    /// something the compiler will infer at the point of use.
-    @Environment(\.toggleSidebar) private var toggleSidebar: ToggleSidebarAction
     /// SwiftUI's own way of asking for this window back, which is what the tray
     /// does when the window has been closed and there is nothing among the
     /// app's windows to bring forward.
@@ -323,6 +317,23 @@ struct PlayerView: View {
                 }
             }
         )
+    }
+
+    /// The toolbar's toggle, said the system's way: `toggleSidebar(_:)` on the
+    /// responder chain — NSSplitViewController's own action, documented since
+    /// 10.11, the one every sidebar button in every Mac app sends — which
+    /// NavigationSplitView's own split controller answers with the system's
+    /// own animation, and then says what it did back through the visibility
+    /// binding above. SwiftUI names no environment action for this: none is
+    /// documented (`\.toggleSidebar` resolves to nothing in the SDK), so the
+    /// window asks AppKit the way AppKit asks itself. Nobody in the chain to
+    /// answer — a window whose split is not there — and the binding moves the
+    /// column itself, which the split animates all the same (issue #15).
+    private func toggleSidebar() {
+        if !NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)),
+                             to: nil, from: nil) {
+            presentation.sideOpen.toggle()
+        }
     }
 
     private var look: Theme { Theme(rawValue: lookName) ?? .system }
