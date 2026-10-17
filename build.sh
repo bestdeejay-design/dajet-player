@@ -12,8 +12,9 @@
 # binary in the right place.
 #
 # This one stops at the app. The disk image, the ZIP and the appcast an updater
-# reads are the release wave's business, and the icon comes with the design
-# waves; until then the app wears the plain one macOS gives it.
+# reads are the release wave's business. The icon is not: it arrived with the
+# design wave (assets/AppIcon.icns, drawn by media/icon.mjs) and goes into the
+# bundle here, so a build from a checkout wears the same mark as a release.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -48,6 +49,18 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$EXEC"
 
+# The icon, from the design wave: assets/AppIcon.icns, which media/ builds
+# from assets/icon.svg (the series' squircle and the player's wave). A macOS
+# app wears its icon out of its own Resources folder and the plist names it
+# below. A checkout without the asset still builds — it is a picture, not a
+# part of the program — and says so rather than shipping an app that silently
+# wears the plain icon.
+if [ -f assets/AppIcon.icns ]; then
+  cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+else
+  echo "no assets/AppIcon.icns: the app will wear the plain icon" >&2
+fi
+
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary, more than half of what it weighs, and
 # nothing the app reads while it runs. They are kept beside the build instead,
@@ -75,6 +88,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHumanReadableCopyright</key><string>© Dajet</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict>
 </plist>
 PLIST
