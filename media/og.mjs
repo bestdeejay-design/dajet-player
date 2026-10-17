@@ -75,7 +75,12 @@ function path2(ctx, d) {
   ctx.closePath()
 }
 
-/** The app's icon, drawn from the very geometry the .icns is made of. */
+/**
+ * The app's icon, drawn from the very geometry the .icns is made of — on the
+ * classic grid (a plate of 824 on the 1024 canvas), which is where the card's
+ * layout was measured: the plate that fills the whole canvas is the rule for
+ * the icon macOS wraps, not for a mark standing in a lockup.
+ */
 function glyph(ctx, x, y, size, { stroke = 74 } = {}) {
   const s = size / 1024
   ctx.save()

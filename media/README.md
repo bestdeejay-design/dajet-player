@@ -19,8 +19,8 @@ check is about the Swift package, not about a folder of picture makers.
 
 | File | Writes | What it is |
 |---|---|---|
-| `icon.mjs` | `assets/icon.svg`, `assets/AppIcon.icns` | the mark: Apple's squircle, the series' near-black, one terracotta wave |
-| `check-icns.mjs` | — | unpacks `AppIcon.icns` and verifies every entry has plate and mark pixels |
+| `icon.mjs` | `assets/icon.svg`, `assets/icon-1024.png`, `assets/AppIcon.icns`, `assets/icon-16x16-enlarged.png` | the mark: Apple's squircle filling the canvas, the series' near-black, one terracotta wave |
+| `check-icns.mjs` | — | unpacks `AppIcon.icns` and verifies every entry has plate and mark pixels, and a plate that fills it |
 | `screens.mjs` | `assets/screenshots/*.png` | the window, in its templates, at 2x |
 | `og.mjs` | `assets/og-player-1200.jpg`, `assets/og-player-1080.jpg` | the two social cards |
 | `svg.mjs` | `assets/header.svg`, `assets/footer.svg` | the README's banners, drawn as SVG so a README can be any width |
@@ -67,11 +67,20 @@ entries; the old raw-bitmap types are for systems this app does not run on.
 
 `check-icns.mjs` unpacks the `.icns` by hand (no `iconutil` — runs on Linux
 CI) and prints one line per entry: size, fraction of plate pixels (`#15181C`),
-fraction of mark pixels (`#E8AE8C`), and a pass/fail marker. An entry that
-comes out of the build with zero plate and zero mark pixels — noise instead
-of a sign — makes the script exit non-zero, so the defect that landed in PR
-#11 review (16×16 and 32×32 came out as coloured noise on a macOS build)
-cannot silently pass again.
+fraction of mark pixels (`#E8AE8C`), how far the plate reaches towards the
+edges of the entry, and a pass/fail marker. An entry that comes out of the
+build with zero plate and zero mark pixels — noise instead of a sign — makes
+the script exit non-zero, so the defect that landed in PR #11 review (16×16 and
+32×32 came out as coloured noise on a macOS build) cannot silently pass again.
+
+The `edge` column is the same promise for the plate: it is the smallest share
+of plate-coloured pixels along the middle half of the entry's four outer rows
+and columns — `1.00` when the plate reaches every edge, `0.00` when there is a
+clear margin around it. The icon that shipped before this change measured
+`0.00` on all ten entries and now measures `1.00` on nine of them and `0.75` on
+the 16 × 16 one, where a single pixel along the edge is half antialiasing. A
+margin is a defect, not a style: macOS 26 draws a plate of its own behind an
+icon that has one.
 
 ```bash
 node media/check-icns.mjs                       # checks assets/AppIcon.icns

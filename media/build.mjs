@@ -24,7 +24,7 @@ const run = (file) => {
   execFileSync(process.execPath, [path.join(here, file), assets], { stdio: 'inherit', cwd: here })
 }
 
-run('icon.mjs')      // assets/icon.svg, assets/AppIcon.icns
+run('icon.mjs')      // assets/icon.svg, icon-1024.png, AppIcon.icns, icon-16x16-enlarged.png
 run('screens.mjs')   // assets/screenshots/*.png
 run('og.mjs')        // assets/og-player-1200.jpg, assets/og-player-1080.jpg
 run('svg.mjs')       // assets/header.svg, assets/footer.svg

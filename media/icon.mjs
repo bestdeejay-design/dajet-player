@@ -5,25 +5,35 @@
 // mark stands without the app around it, so it is the mark and nothing else —
 // no gradient, no second colour, no shadow of its own.
 //
-// The squircle is Apple's continuous corner, as a superellipse of n = 5 over
-// the 824-point body Big Sur's grid gives an icon on a 1024 canvas.
+// The squircle is Apple's continuous corner, as a superellipse of n = 5, and
+// it fills the canvas: the plate is 1024 on a 1024 canvas, with no clear
+// margin around it. The classic grid — a body of 824, centred — is the one the
+// wave was measured on (596 wide, 244 tall, a stroke of 74), and everything
+// measured there grows by the same 1024/824 the plate grew by: the corner is
+// 0.2253 x 1024 and the stroke is 92. That is the series' canon (the brand
+// repository's palette.json), and the reason is macOS 26: the system puts an
+// icon with clear margins inside a plate of its own, and the mark reads as an
+// icon inside an icon. A plate that fills the canvas lands on the system's
+// tile exactly, and there is no second frame to see.
 //
 //   node icon.mjs <assetsDir>
 
 import sharp from 'sharp'
 import fs from 'node:fs'
 import path from 'node:path'
-import { deflateSync } from 'node:zlib'
 
 export const GROUND = '#15181C'
 export const ACCENT = '#E8AE8C'
 
 const CANVAS = 1024
-const BODY = 824
-const CORNER = 0.2253 * BODY
+const BODY = 824 // the grid the wave was measured on; the plate outgrew it
+const PLATE = CANVAS // the plate fills the canvas — nothing clear around it
+const GROWTH = PLATE / BODY // 1.2427: the mark grows with the plate
+const CORNER = 0.2253 * PLATE
+const STROKE = 92 // 74 x GROWTH, rounded: the canon's stroke at 1024
 
 /** The continuous-cornered square, as a path of straight segments. */
-export function squirclePathData(inset = (CANVAS - BODY) / 2, size = BODY, corner = CORNER, steps = 96, n = 5) {
+export function squirclePathData(inset = (CANVAS - BODY) / 2, size = BODY, corner = 0.2253 * size, steps = 96, n = 5) {
   const c = size / 2
   const a = c - corner
   const pts = []
@@ -60,14 +70,15 @@ export function wavePathData(width = 596, height = 244, crests = 2, steps = 128)
 }
 
 /**
- * The icon as SVG. One stroke for all sizes — the reviewer's note from PR #11
- * acceptance: no optical sizing, no heavier line for small entries. The mark
- * is the mark, rendered once at full resolution and downscaled.
+ * The icon as SVG: the plate over the whole canvas, the wave grown with it.
+ * One stroke for all sizes — the reviewer's note from PR #11 acceptance: no
+ * optical sizing, no heavier line for small entries. The mark is the mark,
+ * rendered once at full resolution and downscaled.
  */
-export function iconSVG({ stroke = 74, background = GROUND, accent = ACCENT, label = 'Dajet Player' } = {}) {
+export function iconSVG({ stroke = STROKE, background = GROUND, accent = ACCENT, label = 'Dajet Player' } = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}" viewBox="0 0 ${CANVAS} ${CANVAS}" role="img" aria-label="${label}">
-  <path d="${squirclePathData()}" fill="${background}"/>
-  <path d="${wavePathData()}" fill="none" stroke="${accent}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="${squirclePathData((CANVAS - PLATE) / 2, PLATE, CORNER)}" fill="${background}"/>
+  <path d="${wavePathData(596 * GROWTH, 244 * GROWTH)}" fill="none" stroke="${accent}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 `
 }
@@ -100,15 +111,20 @@ function icnsChunk(type, data) {
   return Buffer.concat([head, data])
 }
 
+/** The one render every raster comes from: the SVG at full resolution. */
+export function renderMaster() {
+  return sharp(Buffer.from(iconSVG()), { density: 72 })
+    .resize(CANVAS, CANVAS)
+    .png()
+    .toBuffer()
+}
+
 export async function buildIcns() {
   // One render for every entry: full-resolution SVG, then downscale with a
   // quality filter. The small entries (16, 32) share the same raster as the
   // large ones — no separate stroke, no optical sizing, no chance of one
   // entry being a different picture from the rest.
-  const master = await sharp(Buffer.from(iconSVG()), { density: 72 })
-    .resize(CANVAS, CANVAS)
-    .png()
-    .toBuffer()
+  const master = await renderMaster()
 
   const chunks = []
   for (const { type, size } of ENTRIES) {
@@ -125,14 +141,21 @@ export async function buildIcns() {
   return Buffer.concat([header, body])
 }
 
-/** The same PNGs the .icns carries, for the places a single file is wanted. */
-export async function iconPNG(size) {
-  const master = await sharp(Buffer.from(iconSVG()), { density: 72 })
-    .resize(CANVAS, CANVAS)
-    .png()
-    .toBuffer()
-  return sharp(master)
-    .resize(size, size, { kernel: 'lanczos3' })
+/**
+ * The same rasters the .icns carries, for the places a single file is wanted:
+ * the 1024 render, and — with `magnify` — the smallest entry blown up without
+ * smoothing, which is how the mark's legibility at 16 px is read by eye
+ * rather than claimed.
+ */
+export async function iconPNG(size = CANVAS, { magnify = 1 } = {}) {
+  const master = await renderMaster()
+  const png = await (size === CANVAS
+    ? sharp(master).png()
+    : sharp(master).resize(size, size, { kernel: 'lanczos3' }).png()
+  ).toBuffer()
+  if (magnify === 1) return png
+  return sharp(png)
+    .resize(size * magnify, size * magnify, { kernel: 'nearest' })
     .png()
     .toBuffer()
 }
@@ -140,7 +163,16 @@ export async function iconPNG(size) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const out = process.argv[2] ?? path.resolve(import.meta.dirname, '..', 'assets')
   fs.mkdirSync(out, { recursive: true })
-  fs.writeFileSync(path.join(out, 'icon.svg'), iconSVG())
-  fs.writeFileSync(path.join(out, 'AppIcon.icns'), await buildIcns())
-  console.log('wrote', path.join(out, 'icon.svg'), 'and', path.join(out, 'AppIcon.icns'))
+  const written = []
+  const write = async (name, bytes) => {
+    fs.writeFileSync(path.join(out, name), bytes)
+    written.push(path.join(out, name))
+  }
+  await write('icon.svg', Buffer.from(iconSVG()))
+  await write('icon-1024.png', await iconPNG(CANVAS))
+  await write('AppIcon.icns', await buildIcns())
+  // The 16 x 16 entry, 16 times larger and nearest-neighbour: the proof that
+  // the mark still reads where there are sixteen pixels to read it in.
+  await write('icon-16x16-enlarged.png', await iconPNG(16, { magnify: 16 }))
+  console.log('wrote', written.join(', '))
 }
