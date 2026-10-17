@@ -1,0 +1,13 @@
+{
+  "name": "dajet-player-media",
+  "private": true,
+  "type": "module",
+  "description": "The generators behind assets/ — the icon, the screenshots, the social cards and the README's banners.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
+    "sharp": "^0.34.4"
+  }
+}

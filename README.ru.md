@@ -16,6 +16,22 @@
 
 Версия `joer` и релиз — следующие волны; очередь в [ROADMAP.md](ROADMAP.md).
 
+## Как это выглядит
+
+<picture><img src="assets/screenshots/horizontal-playing.png" width="548" alt="Горизонтальный шаблон: обложка, трек и транспорт"></picture>
+<picture><img src="assets/screenshots/vertical-playing.png" width="232" alt="Вертикальный шаблон, 232 на 441"></picture>
+
+*Horizontal — 548 × 284 и Vertical — 232 × 441: два шаблона, которые владелец измерил; стекло в светлой теме.*
+
+<picture><img src="assets/screenshots/side-menu.png" width="600" alt="Боковое меню с плейлистами и их треками"></picture>
+
+*Боковое меню: плейлисты и треки раскрытого — окно остаётся плеером.*
+
+<picture><img src="assets/screenshots/glass-desktop.png" width="600" alt="Стекло поверх рабочего стола"></picture>
+<picture><img src="assets/screenshots/obsidian.png" width="232" alt="Тёмная тема, Obsidian"></picture>
+
+*Слева: светлая тема — стекло поверх того, что за окном. Справа: Obsidian — тёмная тема, одна матовая поверхность.*
+
 ## Что это
 
 Dajet Player занимает ту же позицию, что и вся серия: **плеер, который молчит**.
