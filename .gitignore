@@ -8,6 +8,11 @@ build/
 # Python's bytecode cache, left by the probe scripts.
 __pycache__/
 
+# The media generators' two tools (media/package.json). They draw the pictures
+# under assets/ and nothing of them ships in the app; the pictures themselves
+# are committed, so a checkout needs no JavaScript to be a checkout.
+node_modules/
+
 # Signing material that's tied to one Apple Developer account and should
 # never be committed, even though the scripts happily run without it.
 *.provisionprofile
