@@ -49,7 +49,17 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// this only when there is none to find, which is what a closed `Window`
     /// scene leaves behind: nothing among the app's windows, and a scene that
     /// will make one again when it is asked.
+    /// The window's own way back, installed by the window while there is one:
+    /// the last resort for bringing the player forward from here.
     static var reopen: (@MainActor () -> Void)?
+
+    /// The Side Menu item's way through the window, installed the same way:
+    /// the toggle arrives inside a SwiftUI transaction, so the split answers
+    /// it with the system's own animation instead of the column jumping
+    /// (issue #15). Nothing installed — no window has been up yet — and the
+    /// model's own flag is the answer, which the split reads through its
+    /// binding.
+    static var toggleSideThroughWindow: (@MainActor () -> Void)?
 
     /// The item in the menu bar. Held, because an `NSStatusItem` nobody holds
     /// is an item that is gone: the status bar keeps no reference of its own.
@@ -467,7 +477,13 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showPlayer()
     }
 
-    @objc private func toggleSide() { presentation.sideOpen.toggle() }
+    @objc private func toggleSide() {
+        if let through = Self.toggleSideThroughWindow {
+            MainActor.assumeIsolated { through() }
+        } else {
+            presentation.sideOpen.toggle()
+        }
+    }
     @objc private func shuffle() { engine.toggleShuffle() }
     @objc private func repeatMode() { engine.cycleRepeat() }
     @objc private func mute() { engine.toggleMute() }
