@@ -146,23 +146,31 @@ enum Palette {
 enum Metrics {
     /// One round button in the window, and the size a hand expects one at.
     static let door: CGFloat = 26
-    /// The side menu: the width it rests at, and the two it is pulled between.
-    /// The resting width is also the smallest window this player has — a formal
-    /// square of it, and the reason a window can never be narrower than the
-    /// column that belongs in it (see App.swift).
+    /// The side menu: the width it rests at, and the two it lives between. The
+    /// split view is handed the range (App.swift) and its divider does the
+    /// rest; the resting width is what the column comes out at, and is also
+    /// the smallest window this player has — a formal square of it, and the
+    /// reason a window can never be narrower than the column that belongs in
+    /// it (see App.swift).
     static let side: CGFloat = 232
     static let sideMin: CGFloat = 176
     static let sideMax: CGFloat = 440
-    /// The band along the window's leading edge that the side menu is pulled
-    /// out by, and the one along the column's own edge that sizes it.
-    static let pull: CGFloat = 9
+    /// The narrowest the wide card is ever squeezed to — the H-B measured
+    /// 324: a 160 sleeve, 12 of air, 152 of column. While the column is out
+    /// this is the player's floor, and the window's own minimum is built on
+    /// it (see Presentation.contentMinWidth).
+    static let playerDrawerMin: CGFloat = 324
+    /// The strip a hand and the keyboard land on around the progress line:
+    /// the line is the drawing, this is the hit zone — sixteen points, the
+    /// least the platform's own controls would carry (issue #15).
+    static let scrubStrip: CGFloat = 16
     /// The air above the column's first row, now that the column has no band of
     /// its own to hold it away from the toolbar.
     static let gap: CGFloat = 10
-    /// The narrowest the player is ever squeezed to. Past this the column goes
-    /// *over* the player, which is what a drawer does, rather than shoving the
-    /// transport off the edge of the glass: a window too small for both is a
-    /// window with one of them, and the one a hand just asked for is the column.
+    /// The narrowest the tall card is ever squeezed to, and the floor the
+    /// split's detail stands on: a window that cannot hold column and player
+    /// grows instead — the column is beside the player now, and nothing is
+    /// ever over anything (issue #15).
     static let playerMin: CGFloat = 200
     /// The width from which the foot of the window has room for all seven of
     /// its controls on one row — the two modes, the three hands and the volume,
@@ -181,20 +189,18 @@ enum Metrics {
     static let panel: CGFloat = 12
 }
 
-// One spring for anything that moves between two places, one for anything that
-// arrives or leaves, and one flick for a thing under the pointer. Using the
-// same two everywhere is most of why a thing feels like a single piece of
-// software rather than a pile of views — the browser's words, and its numbers.
-// With macOS Reduce Motion on, transitions become immediate.
+// One spring for anything that arrives or leaves, and one flick for a thing
+// under the pointer. There used to be a third, the column's own glide, and it
+// is gone with the drawer it moved: the column is the split view's element
+// now, and opening and closing it is the system's own motion (issue #15).
+// Using the same two everywhere is most of why a thing feels like a single
+// piece of software rather than a pile of views — the browser's words, and
+// its numbers. With macOS Reduce Motion on, transitions become immediate.
 enum Motion {
     /// Whether the interface should move at all, following the Mac's own
     /// accessibility setting.
     static var reduced: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
-
-    static var glide: Animation? {
-        reduced ? nil : .spring(response: 0.34, dampingFraction: 0.82)
     }
 
     static var settle: Animation? {
@@ -338,11 +344,21 @@ struct Door: View {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous))
         }
-        .buttonStyle(.plain)
+        // Borderless rather than plain: the door is drawn by what is above,
+        // and what the platform owes a button — the pressed state, the focus
+        // ring under Full Keyboard Access, the seat in the responder chain —
+        // comes from the style, not from this view (issue #15). The wash the
+        // pointer sees stays this window's own.
+        .buttonStyle(.borderless)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.35)
         .onHover { hovering = $0 }
         .help(help)
+        // What VoiceOver is told: the door's own word when it has one, and
+        // the glyph's name, said the way a person would, when it has not.
+        .accessibilityLabel(help.isEmpty
+                            ? Text(icon.replacingOccurrences(of: ".", with: " "))
+                            : Text(help))
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: on)
     }

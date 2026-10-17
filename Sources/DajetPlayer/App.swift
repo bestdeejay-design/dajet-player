@@ -15,23 +15,23 @@ import UniformTypeIdentifiers
 // Along the top of the window there is a toolbar, and it is the system's own
 // (P-10): the side menu's toggle at the leading end beside the traffic lights,
 // and the two things a player can be told about itself — a folder, and which
-// of the three looks it wears — at the other. A band drawn by hand was what
-// this window had before, and a hand-drawn band is a band that has to guess
-// where the traffic lights are, put window dragging back by hand, and answer a
-// double-click on a title bar it does not have; a toolbar is given all three by
-// the platform, in the place macOS puts them, and it costs nothing in the
-// window's body. Nothing else in the body is a button that belongs at the top.
+// of the three looks it wears — at the other.
 //
-// The side menu is the browser's own column: the same width, the same spring
-// (Motion.glide), pulled out by a hand on the window's leading edge and sized
-// by a hand on its own edge, with the toolbar's toggle there in both states.
-// Inside it are playlists — folders of music, added by ⌘O or by being dropped
-// on the window, kept until they are removed, and there for the next run
-// (Playlists.swift, Side.swift). The column is never wider than the window it
-// is in and never shoves the player out of it: on a window too narrow for both,
-// the column goes *over* the player, which is what a drawer does, rather than
-// squeezing the transport until it runs off the edge (P-10 — the layout the
-// owner sent a picture of).
+// The side menu is no longer a view the window pulls over itself: it is an
+// element of a two-column `NavigationSplitView` — on macOS the wrapper around
+// the platform's own `NSSplitViewController` — so the column has the system's
+// divider, the system's collapse, and the system's animation, and it can
+// never be *over* the player again, because a split element is beside its
+// detail by construction (issue #15). The window's own minimum says the same
+// thing out loud: while the column is out, the window is never narrower than
+// the column plus the narrowest the player can be — `contentMinSize`, said
+// from the view here and written on the window itself by Presentation, and
+// before the column comes out in a window too narrow for both, the window
+// grows to hold them. The hand-pulled edge, the spring of its own, and the
+// drawer that went over the transport in a narrow window are all gone with
+// the arithmetic that needed them. Inside the column are playlists — folders
+// of music, added by ⌘O or by being dropped on the window, kept until they
+// are removed, and there for the next run (Playlists.swift, Side.swift).
 //
 // The look covers the whole window — glass in the light theme, matte
 // almost-black in the dark — and the window itself is dressed for it
@@ -39,12 +39,13 @@ import UniformTypeIdentifiers
 //
 // None of this touches what the player does. Space plays and pauses from the
 // moment the window opens, with nothing clicked and nothing focused, the two
-// arrows walk the queue beside it, the Mac's own media keys and its Now
-// Playing card are the app's, volume and mute are remembered, and a folder
-// dropped on the window plays at once — all of it the engine's, exactly as
-// P-03 to P-05 left it. And the player is not the window's any more: the tray
-// owns it, so closing the window leaves the music playing and the menu bar in
-// charge of it (Tray.swift).
+// arrows walk the queue beside it — unless the progress line has the
+// keyboard, in which case the arrows are its five seconds — the Mac's own
+// media keys and its Now Playing card are the app's, volume and mute are
+// remembered, and a folder dropped on the window plays at once — all of it
+// the engine's, exactly as P-03 to P-05 left it. And the player is not the
+// window's any more: the tray owns it, so closing the window leaves the
+// music playing and the menu bar in charge of it (Tray.swift).
 
 @main
 struct DajetPlayerApp: App {
@@ -66,13 +67,6 @@ struct DajetPlayerApp: App {
     var body: some Scene {
         Window("Dajet Player", id: PlayerView.windowID) {
             PlayerView(engine: tray.engine, playlists: tray.playlists, presentation: tray.presentation)
-                // A formal square, and the column's own resting width: the
-                // window is never smaller than the side menu is wide, and never
-                // narrower than it is tall (P-10). What the player needs to be
-                // comfortable is more than this, and a window resized down to
-                // here is a window with a drawer over it rather than one with
-                // its transport hanging off the edge.
-                .frame(minWidth: Metrics.side, minHeight: Metrics.side)
         }
         // The system's own toolbar, with no title in it: the buttons are the
         // window's, the traffic lights are macOS's, and the band they share is
@@ -92,6 +86,12 @@ struct DajetPlayerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
+            // The system's own View ▸ Toggle Sidebar, wired by the system to
+            // the window's split view: the one menu-bar item a column toggle
+            // is allowed to gain, in the place and with the shortcut the
+            // platform puts it (⌃⌘S). The browser's ⌥⌘S is still heard by the
+            // window itself, below.
+            SidebarCommands()
         }
     }
 }
@@ -108,15 +108,9 @@ struct PlayerView: View {
 
     /// The look that is on, kept between runs under the one key.
     @AppStorage(Theme.key) private var lookName = Theme.system.rawValue
-    /// The side menu's width, remembered the same way.
-    @AppStorage("sideWidth") private var sideSpan = Double(Metrics.side)
-    /// Whether the side menu is out, and how far a hand has pulled it while
-    /// one is on the window's edge.
-    private var menu: Bool {
-        get { presentation.sideOpen }
-        nonmutating set { presentation.sideOpen = newValue }
-    }
-    @State private var pull: CGFloat = 0
+    /// Whether the side menu is out — said once here, because the toolbar's
+    /// help and the keyboard both want the window's own word for it.
+    private var menu: Bool { presentation.sideOpen }
     /// A number that goes up when the menu's lists are out of date — it has
     /// just come out, or a folder has just been added.
     @State private var fresh = 0
@@ -132,11 +126,22 @@ struct PlayerView: View {
     @State private var scrubbing: TimeInterval?
     /// The pointer is on the bar.
     @State private var hoveringBar = false
-    /// The pointer is on the play button.
-    @State private var hoveringPlay = false
+    /// Whether the bar has the keyboard, kept where the key monitor can read
+    /// it: the monitor was installed before SwiftUI's focus system and cannot
+    /// ask a focus state directly, so this box is told instead (see the
+    /// `onChange` of `barFocused` below).
+    @State private var barFocus = FocusBox()
+    /// The keyboard, while the progress line is the one thing on the window
+    /// that has it: the arrows are then the line's five seconds, and nobody
+    /// else's.
+    @FocusState private var barFocused: Bool
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    /// The system's own action for the window's split view (macOS 14): what
+    /// the toolbar's toggle calls, so that opening and closing the column is
+    /// the system's motion and never this window's (issue #15).
+    @Environment(\.toggleSidebar) private var toggleSidebar
     /// SwiftUI's own way of asking for this window back, which is what the tray
     /// does when the window has been closed and there is nothing among the
     /// app's windows to bring forward.
@@ -151,57 +156,36 @@ struct PlayerView: View {
             WindowDress(glass: scheme == .light && !reduceTransparency, presentation: presentation)
                 .frame(width: 0, height: 0)
 
-            // Everything else, laid out against the room the window actually
-            // has — which is the room below the toolbar, and is asked of the
-            // layout rather than assumed, because a window that can be resized
-            // down to a square of 232 points is a window whose contents have to
-            // know how narrow they are.
-            GeometryReader { room in
-                let wide = room.size.width
-                // The column is never wider than the window it is in.
-                let column = min(span, max(0, wide))
-                // How far the player may be shoved over: far enough for the
-                // column, and never so far that there is no player left. A
-                // window too narrow for both gets the column *over* the player,
-                // which is what a drawer does, instead of a transport squeezed
-                // until it runs off the edge of the glass.
-                let horizontal = presentation.template == .horizontal
-                    || (presentation.template == .custom && wide >= 480 && wide > room.size.height)
-                let reach = horizontal ? max(0, wide - 308) : 0
-                // How far the column has come out: all of itself while it is
-                // open, and the hand's own worth while one is pulling it.
-                let travel = menu ? column : min(max(pull, 0), column)
-                ZStack(alignment: .topLeading) {
-                    templatePlayer(horizontal: horizontal, drawer: horizontal && travel > 0,
-                                   size: CGSize(width: wide - min(travel, reach), height: room.size.height))
-                        .padding(.leading, min(travel, reach))
-
-                    // The window's leading edge: a hand pulling the menu out.
-                    puller
-
-                    // The menu, over the player while it is on its way out and
-                    // beside it once it is there. It is never in the way of
-                    // anything while it is away: away means off the window's
-                    // edge, where nothing can be clicked, and not merely
-                    // invisible.
-                    SideMenu(
-                        engine: engine,
-                        playlists: playlists,
-                        span: columnSpan,
-                        refresh: fresh,
-                        widthRange: columnRange,
-                        restingWidth: presentation.template == .custom ? Double(Metrics.side) : WindowTemplate.sideRest
+            // The column and the player, held by the system's own split view:
+            // the sidebar is its element and the player is its detail, so the
+            // two are beside each other by construction, the line between them
+            // is the platform's divider, and opening and closing the column is
+            // the platform's motion. Nothing here is laid out by hand any
+            // more, so nothing here can end up under anything else (issue #15).
+            NavigationSplitView(columnVisibility: column) {
+                SideMenu(engine: engine, playlists: playlists, refresh: fresh)
+                    // The column's width, in the two numbers it always lived
+                    // between and at the one it rests at: told here, where the
+                    // split asks for it, and held there by the system's
+                    // divider.
+                    .navigationSplitViewColumnWidth(
+                        min: columnRange.lowerBound,
+                        ideal: restingWidth,
+                        max: columnRange.upperBound
                     )
-                    .frame(width: column)
-                    .offset(x: travel - column)
-                    .allowsHitTesting(travel > 0)
-                    .accessibilityHidden(travel == 0)
+            } detail: {
+                GeometryReader { room in
+                    templatePlayer(horizontal: horizontal(in: room.size), size: room.size)
                 }
-                .frame(width: wide, height: room.size.height, alignment: .topLeading)
-                .clipped()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The window's minimum, in the one place that sees both states: the
+        // formal square while the column is away, and — while it is out — the
+        // column plus the narrowest the player can be. Presentation says the
+        // same number to the window itself; between the two of them, an
+        // overlay has nothing left to be (issue #15).
+        .frame(minWidth: presentation.contentMinWidth, minHeight: Metrics.side)
         // The window takes what the Finder can carry — a file, a folder, or a
         // handful of either — and nothing else: an address dragged in from a
         // browser is not a file URL, is not accepted, and never reaches the
@@ -215,10 +199,13 @@ struct PlayerView: View {
             // The side menu's toggle, at the leading end and beside the traffic
             // lights, where a toggle for a column on the left belongs and where
             // macOS puts one: visible whether the column is out or away, which
-            // is the whole of what a toggle has to be.
+            // is the whole of what a toggle has to be. Its action is the
+            // system's own `toggleSidebar`, which the split answers with the
+            // system's own animation — this window keeps no flag of its own to
+            // animate (issue #15).
             ToolbarItem(placement: .navigation) {
                 Button {
-                    if menu { shut() } else { open() }
+                    toggleSidebar()
                 } label: {
                     Image(systemName: "sidebar.leading")
                 }
@@ -262,6 +249,14 @@ struct PlayerView: View {
             // while there is one to hand it from.
             let reopen = openWindow
             Tray.reopen = { reopen(id: Self.windowID) }
+            // The tray's Side Menu item, given the same system motion the
+            // toolbar's toggle gets: the column slides because the change
+            // arrives inside a SwiftUI transaction, not because anything here
+            // keeps a spring for it.
+            let presentation = presentation
+            Tray.toggleSideThroughWindow = {
+                withAnimation(.smooth) { presentation.sideOpen.toggle() }
+            }
         }
         .onChange(of: presentation.sideOpen) { _, isOpen in
             if isOpen { fresh += 1 }
@@ -269,6 +264,11 @@ struct PlayerView: View {
         .onChange(of: lookName) { _, _ in
             presentation.themeChanged(look)
             look.apply()
+        }
+        .onChange(of: barFocused) { _, focused in
+            // The line has the keyboard, said where the key monitor can read
+            // it (see the box it is kept in, above).
+            barFocus.focused = focused
         }
         .onDisappear {
             if let keys { NSEvent.removeMonitor(keys) }
@@ -278,107 +278,95 @@ struct PlayerView: View {
 
     // MARK: - the shape of the window
 
-    /// The width the menu wants in the window, which is the width it was last
-    /// pulled to, between the two it lives between.
-    private var span: CGFloat {
-        CGFloat(min(max(columnSpan.wrappedValue, columnRange.lowerBound), columnRange.upperBound))
+    /// Whether the player is drawn as the wide card or the tall one: the
+    /// template's own word and, for Custom — which has no template — the
+    /// window's own shape, said the way it always was: wide enough to be a
+    /// card, and wider than it is tall.
+    private func horizontal(in size: CGSize) -> Bool {
+        presentation.template == .horizontal
+            || (presentation.template == .custom && size.width >= 480 && size.width > size.height)
     }
 
+    /// The two numbers the column's width lives between: the templates' own
+    /// range, and Custom's wider one. The split owns the width now; this is
+    /// where it is told the range (App.swift's column modifier).
     private var columnRange: ClosedRange<Double> {
         presentation.template == .custom
             ? Double(Metrics.sideMin)...Double(Metrics.sideMax)
             : WindowTemplate.sideRange
     }
 
-    private var columnSpan: Binding<Double> {
-        presentation.template == .custom ? $sideSpan : $presentation.sideWidth
+    /// The width the column comes out at, in a template or in Custom.
+    private var restingWidth: Double {
+        presentation.template == .custom ? Double(Metrics.side) : WindowTemplate.sideRest
+    }
+
+    /// The split's column visibility, seen from the window's own word for it:
+    /// the toolbar's toggle, the tray's tick, the keyboard and the View menu
+    /// all say `sideOpen`, and the split says it back through this same
+    /// binding when the system's own toggle, divider or menu item moves it.
+    private var column: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { presentation.sideOpen ? .all : .detailOnly },
+            set: { shown in
+                switch shown {
+                case .all, .sidebar: presentation.sideOpen = true
+                case .detailOnly: presentation.sideOpen = false
+                default: break
+                }
+            }
+        )
     }
 
     private var look: Theme { Theme(rawValue: lookName) ?? .system }
 
-    /// The menu comes out, or goes away, on the one spring — the width of the
-    /// player, the column's own travel and the window's drop of it all in the
-    /// same transaction, so nothing is ever a frame behind anything else.
-    private func open() {
-        fresh += 1
-        withAnimation(Motion.glide) {
-            menu = true
-            pull = 0
-        }
-    }
-
-    private func shut() {
-        withAnimation(Motion.glide) {
-            menu = false
-            pull = 0
-        }
-    }
-
-    /// The window's leading edge, while the menu is away: pull it to bring the
-    /// column out. The hand's own travel is drawn as it moves and the spring
-    /// only decides where it settles, which is what makes an edge feel like an
-    /// edge rather than like a button.
-    ///
-    /// Only while the menu is away — an open menu has its own edge, and that
-    /// one is for sizing it. The toolbar's own band is not part of it: that
-    /// band belongs to the window's drag, and to the buttons in it.
-    private var puller: some View {
-        Color.clear
-            .frame(width: Metrics.pull)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .allowsHitTesting(!menu)
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { hand in
-                        guard !menu else { return }
-                        pull = max(0, hand.translation.width)
-                    }
-                    .onEnded { hand in
-                        guard !menu else { return }
-                        let travelled = max(0, hand.translation.width)
-                        // Either far enough to have meant it, or on its way
-                        // there fast enough that letting go would be a lie.
-                        let wanted = travelled > span * 0.34
-                            || hand.predictedEndTranslation.width > span * 0.62
-                        if wanted { open() } else { shut() }
-                    }
-            )
-            .onHover { over in
-                guard !menu else { return }
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .accessibilityHidden(true)
-    }
-
     // MARK: - the player
 
-    /// P-10R measured content. H-A: 200 + 16 + 300 inside 516 × 212.
-    /// H-B: 160 + 12 + 152 inside 324 × 212; volume is in the tray.
+    /// P-10R measured content, re-centred (issue #15): the cover beside one
+    /// vertically centred block — the names, the line, and everything that
+    /// can be pressed under them — so nothing is pressed down into the bottom
+    /// of the column and nothing spreads into loose lines of its own.
+    /// H-A: 200 + 16 + 300 inside 516 × 212.
+    /// H-B: 160 + 12 + 152 inside 324 × 212.
     /// V-A: 352 pt stack inside 200 × 365, centred (13 pt spare).
-    /// V-B is a drawer over this whole stack, never a 32 pt player.
-    private func templatePlayer(horizontal: Bool, drawer: Bool, size: CGSize) -> some View {
+    private func templatePlayer(horizontal: Bool, size: CGSize) -> some View {
         Group {
             if engine.track != nil {
                 if horizontal {
-                    HStack(spacing: drawer ? 12 : 16) {
-                        let art = min(drawer ? 160.0 : 200.0, max(0, size.height - 20),
-                                      max(0, size.width - (drawer ? 188 : 200)))
+                    // Room for everything on one row is the same 500 it always
+                    // was; below it the same controls are two rows, and nothing
+                    // is dropped, hidden or squeezed off the end.
+                    let roomy = size.width >= Metrics.roomy
+                    let art = min(roomy ? 200.0 : 160.0,
+                                  max(0, size.height - 20),
+                                  max(0, size.width - (roomy ? 200 : 188)))
+                    HStack(spacing: roomy ? 16 : 12) {
                         Cover(cover: engine.cover).frame(width: art, height: art)
                         VStack(spacing: 0) {
-                            templateNames(titleHeight: 40, subtitleHeight: drawer ? 16 : 18)
-                            Color.clear.frame(height: drawer ? 8 : 14)
-                            progress(tight: true).frame(height: drawer ? 14 : 16)
-                            Color.clear.frame(height: drawer ? 8 : 12)
-                            templateHands
-                            if !drawer {
-                                Color.clear.frame(height: 12)
-                                templateVolume.frame(height: 24)
+                            templateNames(titleHeight: 40, subtitleHeight: roomy ? 18 : 16)
+                            Color.clear.frame(height: roomy ? 14 : 8)
+                            progress(tight: true).frame(height: Metrics.scrubStrip)
+                            Color.clear.frame(height: roomy ? 12 : 8)
+                            if roomy {
+                                // One row: the modes with the volume beside
+                                // them, and the transport centred between.
+                                HStack(spacing: 12) {
+                                    modesAndVolume
+                                    Spacer(minLength: 12)
+                                    templateHands
+                                    Spacer(minLength: 12)
+                                }
+                            } else {
+                                VStack(spacing: 10) {
+                                    templateHands
+                                    modesAndVolume
+                                }
+                                .frame(maxWidth: .infinity)
                             }
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, drawer ? 12 : 16)
+                    .padding(.horizontal, roomy ? 16 : 12)
                     .padding(.vertical, 10)
                 } else {
                     VStack(spacing: 0) {
@@ -389,11 +377,11 @@ struct PlayerView: View {
                         Color.clear.frame(height: 10)
                         templateNames(titleHeight: 36, subtitleHeight: 16)
                         Color.clear.frame(height: 8)
-                        progress(tight: true).frame(height: 14)
+                        progress(tight: true).frame(height: Metrics.scrubStrip)
                         Color.clear.frame(height: 10)
                         templateHands
                         Color.clear.frame(height: 10)
-                        templateVolume.frame(height: 22)
+                        modesAndVolume
                     }
                     .frame(maxWidth: 240)
                     .padding(.horizontal, 16)
@@ -405,7 +393,7 @@ struct PlayerView: View {
                     if let note = engine.note { saying(note, tight: true) }
                     else { invitation(tight: true) }
                     templateHands
-                    templateVolume.frame(maxWidth: 200)
+                    modesAndVolume
                 }
                 .padding(16)
             }
@@ -446,7 +434,12 @@ struct PlayerView: View {
         .frame(height: 26)
     }
 
-    private var templateVolume: some View {
+    /// The two modes and the volume beside them, said compactly: three doors
+    /// and a short slider. The slider is short because a volume that is half
+    /// the column wide is a slider with opinions about the column's width
+    /// (issue #15); the same compact row is what every layout holds — the wide
+    /// card beside its transport, the tall card under its own.
+    private var modesAndVolume: some View {
         HStack(spacing: 8) {
             Door(icon: "shuffle", help: "Shuffle", on: engine.shuffle,
                  size: 22, glyph: 11, act: { engine.toggleShuffle() })
@@ -457,90 +450,12 @@ struct PlayerView: View {
                  help: engine.muted ? "Unmute" : "Mute", on: engine.muted,
                  size: 22, glyph: 11, act: { engine.toggleMute() })
             Slider(value: volume, in: 0...1)
+                .frame(width: 44)
                 .controlSize(.mini)
                 .tint(Palette.accent)
+                .help("Volume — remembered between runs")
                 .accessibilityLabel("Volume")
         }
-    }
-
-    // Legacy two-row footer: retained for the older dynamic layout, not used
-    // by measured H/V templates. Do not fold it into H's 162 pt stack.
-    /// The player: the one track that matters, and the transport under it. No
-    /// band of its own along the top — that is the window's toolbar now, and
-    /// the first thing in the body of this window is the music.
-    ///
-    /// `tight` is the player's own verdict on the room it has been given, and
-    /// everything below it that can be drawn two ways is: a window resized down
-    /// is a window that keeps the whole player in it, in less room, rather than
-    /// one that loses the end of a slider off its edge.
-    private func player(tight: Bool) -> some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: tight ? 4 : 12)
-            middle(tight: tight)
-            Spacer(minLength: tight ? 4 : 12)
-            foot(tight: tight)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The middle of the window: what is playing, or the invitation to drop
-    /// something on it, or whatever the player has to say instead of a track.
-    @ViewBuilder
-    private func middle(tight: Bool) -> some View {
-        if let track = engine.track {
-            nowPlaying(track, tight: tight)
-        } else if let note = engine.note {
-            saying(note, tight: tight)
-        } else {
-            invitation(tight: tight)
-        }
-    }
-
-    /// What is playing: the sleeve, and the names on it. Nothing else — the
-    /// list of the folder is in the menu, where it is a list of somewhere,
-    /// and the window in front of the listener is the one track that is
-    /// actually being heard.
-    ///
-    /// The sleeve is whatever the file said — its own embedded cover, or the
-    /// picture lying beside it in the folder, or nothing at all, which is the
-    /// engine's business and not this one's (see Artwork.swift).
-    private func nowPlaying(_ track: URL, tight: Bool) -> some View {
-        VStack(spacing: tight ? 12 : 20) {
-            Cover(cover: engine.cover)
-            VStack(spacing: 5) {
-                Text(engine.title ?? track.deletingPathExtension().lastPathComponent)
-                    .font(.system(size: tight ? 16 : 19, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(track.lastPathComponent)
-                if let artist = engine.artist {
-                    Text(artist)
-                        .font(.system(size: tight ? 12 : 13))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                }
-                if !caption.isEmpty {
-                    Text(caption)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.faint)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: 420)
-            .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, tight ? 14 : 36)
-    }
-
-    /// What is under the title: the album it came off, and where in the queue
-    /// the player has got to. Both are optional and neither is a hole in the
-    /// window when it is missing.
-    private var caption: String {
-        var said: [String] = []
-        if let album = engine.album { said.append(album) }
-        if engine.count > 0 { said.append("Track \(engine.number) of \(engine.count)") }
-        return said.joined(separator: " · ")
     }
 
     /// Nothing has been opened, which is where a fresh copy of the player
@@ -587,28 +502,14 @@ struct PlayerView: View {
         .padding(.horizontal, tight ? 14 : 36)
     }
 
-    /// The foot of the window: how far into the track the player is and where
-    /// a hand can take it to, then everything that can be pressed. All of it
-    /// is the engine's — every button here is a hand on something the core
-    /// already did in P-03 to P-05 — and only the drawing of it is this
-    /// version's.
-    private func foot(tight: Bool) -> some View {
-        VStack(spacing: tight ? 10 : 16) {
-            progress(tight: tight)
-            transport(tight: tight)
-        }
-        .padding(.horizontal, tight ? 12 : 28)
-        .padding(.bottom, tight ? 12 : 18)
-    }
-
     /// The line the track is drawn along, the two times at its ends, and the
     /// hand that can take it elsewhere.
     ///
-    /// While a hand is on it the line follows the hand and the music does not
-    /// move one bit: a drag that dragged the sound along would stutter the
-    /// track through every place the thumb passed. Let go, and the track is
-    /// taken to that place, playing or paused as it was — which is exactly
-    /// what the bar at the foot of the window has always done.
+    /// It is still this window's own drawing — dragging along the track of a
+    /// system control is not something the platform offers — but the strip it
+    /// lives on is sixteen points, the least the platform's own controls
+    /// would carry, and it takes the keyboard while it has it: the arrows
+    /// step five seconds (issue #15).
     private func progress(tight: Bool) -> some View {
         HStack(spacing: tight ? 8 : 12) {
             Text(clock(scrubbing ?? engine.position))
@@ -634,7 +535,17 @@ struct PlayerView: View {
                 .contentShape(Rectangle())
                 .gesture(hold(along: wide))
             }
-            .frame(height: 14)
+            // Sixteen points of strip around a four-point line: the line is
+            // the drawing, the strip is where a hand and the keyboard land.
+            .frame(height: Metrics.scrubStrip)
+            .focusable(true)
+            .focused($barFocused)
+            // The ring is the one system ornament this window does not draw:
+            // the strip answers the keyboard and says so with the knob it
+            // already has rather than with a ring it never had.
+            .focusEffectDisabled()
+            .onKeyPress(.leftArrow) { step(-5) }
+            .onKeyPress(.rightArrow) { step(5) }
             .onHover { over in
                 withAnimation(Motion.quick) { hoveringBar = over }
             }
@@ -647,146 +558,28 @@ struct PlayerView: View {
         // whose file has not said how long it is leaves the line drawn but
         // still, rather than one that jumps about over a length nobody knows.
         .opacity(scrubbable ? 1 : 0.4)
+        .help(scrubbable
+              ? "Playback position — drag, or step five seconds with the arrow keys"
+              : "Playback position")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Progress")
         .accessibilityValue("\(Int((filled * 100).rounded())) percent")
-    }
-
-    /// The transport: the three buttons that are always in the same place, with
-    /// the two modes and the volume either side of them — and, in a window too
-    /// narrow for one row of all seven, the same seven in two rows instead.
-    ///
-    /// Nothing is dropped when the window shrinks and nothing is hidden behind
-    /// anything: a player whose shuffle button goes away at a narrow width is a
-    /// player that has taken a setting away because of the size of a window.
-    /// What changes is the air between them, and the row they are on.
-    @ViewBuilder
-    private func transport(tight: Bool) -> some View {
-        if tight {
-            VStack(spacing: 8) {
-                hands(tight: tight)
-                HStack(spacing: 10) {
-                    shuffleButton(tight: tight)
-                    repeatButton(tight: tight)
-                    Spacer(minLength: 8)
-                    muteButton(tight: tight)
-                    loudness(tight: tight)
-                }
-            }
-        } else {
-            HStack(spacing: 16) {
-                shuffleButton(tight: tight)
-                repeatButton(tight: tight)
-
-                Spacer(minLength: 18)
-
-                hands(tight: tight)
-
-                Spacer(minLength: 18)
-
-                muteButton(tight: tight)
-                loudness(tight: tight)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: engine.seek(to: engine.position + 5)
+            case .decrement: engine.seek(to: engine.position - 5)
+            @unknown default: break
             }
         }
     }
 
-    /// The three that matter most, and the three that are always together: back,
-    /// play or pause, on.
-    private func hands(tight: Bool) -> some View {
-        HStack(spacing: tight ? 12 : 16) {
-            Door(
-                icon: "backward.fill",
-                help: "Previous — the start of this track, once three seconds of it have gone by",
-                size: tight ? 30 : 34,
-                glyph: tight ? 14 : 15,
-                enabled: engine.count > 0,
-                act: { engine.previous() }
-            )
-            playButton(tight: tight)
-            Door(
-                icon: "forward.fill",
-                help: "Next track",
-                size: tight ? 30 : 34,
-                glyph: tight ? 14 : 15,
-                enabled: engine.count > 0,
-                act: { engine.next() }
-            )
-        }
-    }
-
-    private func shuffleButton(tight: Bool) -> some View {
-        Door(
-            icon: "shuffle",
-            help: engine.shuffle
-                ? "Shuffled — click to walk the queue in the order it was opened"
-                : "In order — click to shuffle the queue",
-            on: engine.shuffle,
-            size: tight ? 26 : 30,
-            glyph: tight ? 12 : 13,
-            act: { engine.toggleShuffle() }
-        )
-    }
-
-    private func repeatButton(tight: Bool) -> some View {
-        Door(
-            icon: engine.repeatMode == .one ? "repeat.1" : "repeat",
-            help: repeatHelp,
-            on: engine.repeatMode != .off,
-            size: tight ? 26 : 30,
-            glyph: tight ? 12 : 13,
-            act: { engine.cycleRepeat() }
-        )
-    }
-
-    private func muteButton(tight: Bool) -> some View {
-        Door(
-            icon: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            help: engine.muted ? "Muted — click to hear it again" : "Mute",
-            on: engine.muted,
-            size: tight ? 26 : 30,
-            glyph: tight ? 11 : 12,
-            act: { engine.toggleMute() }
-        )
-    }
-
-    /// How loud, in a slider that is as wide as the window has room for and no
-    /// wider: at a narrow width it is a short slider, and it is still the same
-    /// slider, remembering the same number between runs.
-    private func loudness(tight: Bool) -> some View {
-        Slider(value: volume, in: 0...1)
-            .frame(width: tight ? 44 : 66)
-            .controlSize(.small)
-            .tint(Palette.accent)
-            .help("Volume — remembered between runs")
-            .accessibilityLabel("Volume")
-    }
-
-    /// Play, or pause: the one button in the window that is a shape rather
-    /// than a glyph, and the one thing in it that is the accent all the way
-    /// through. Nothing is playing and it says so by going quiet rather than
-    /// by going away.
-    private func playButton(tight: Bool) -> some View {
-        let side: CGFloat = tight ? 44 : 52
-        return Button { engine.toggle() } label: {
-            Image(systemName: engine.state == .playing ? "pause.fill" : "play.fill")
-                .font(.system(size: tight ? 15 : 17, weight: .bold))
-                .foregroundStyle(Palette.onAccent)
-                // A play triangle is wider on one side than the other; a
-                // single point of nudge puts it in the middle of the circle.
-                .offset(x: engine.state == .playing ? 0 : 1.5)
-                .frame(width: side, height: side)
-                .background(Circle().fill(Palette.accent))
-                .contentShape(Circle())
-                .scaleEffect(hoveringPlay ? 1.04 : 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(engine.count == 0)
-        .opacity(engine.count == 0 ? 0.4 : 1)
-        .onHover { over in
-            withAnimation(Motion.quick) { hoveringPlay = over }
-        }
-        .help(engine.state == .playing ? "Pause (Space)" : "Play (Space)")
-        .accessibilityLabel(engine.state == .playing ? "Pause" : "Play")
+    /// Five seconds at a time, from the keyboard, while the line has it: the
+    /// engine clamps the step to the track's own ends. Handled, so a held key
+    /// walks the line and nothing else's handler hears it.
+    private func step(_ seconds: TimeInterval) -> KeyPress.Result {
+        guard scrubbable else { return .ignored }
+        engine.seek(to: (scrubbing ?? engine.position) + seconds)
+        return .handled
     }
 
     /// Something is being carried over the window: the whole of it says so,
@@ -979,15 +772,17 @@ struct PlayerView: View {
     /// monitor listening for them would be a second way to play the same
     /// thing.
     ///
-    /// One thing here is not a key of the player's own: ⌥⌘S, which is the side
-    /// menu — the browser's own shortcut for its column. It is in the key
-    /// monitor rather than on the toolbar's toggle because a monitor hears it
-    /// whether or not anything in the window has the keyboard, and because the
-    /// toggle is the one button in the window that a hand may be looking for
-    /// while the column is shut.
+    /// Two keys here are not keys of the player's own. ⌥⌘S is the side menu —
+    /// the browser's own shortcut for its column — and it moves the column the
+    /// way the toolbar's toggle does, inside a transaction the split animates.
+    /// And the two arrows belong to the progress line while it has the
+    /// keyboard (its five seconds at a time, issue #15): the monitor reads the
+    /// line's own little box and lets them through to it.
     private func watchKeys() {
         guard keys == nil else { return }
         let engine = engine
+        let presentation = presentation
+        let barFocus = barFocus
         keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Nothing here is a key in the folder panel: that panel is this
             // app's too, and its keys are its own.
@@ -998,7 +793,7 @@ struct PlayerView: View {
             if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == menuKeys,
                event.charactersIgnoringModifiers?.lowercased() == "s" {
                 MainActor.assumeIsolated {
-                    if menu { shut() } else { open() }
+                    withAnimation(.smooth) { presentation.sideOpen.toggle() }
                 }
                 return nil
             }
@@ -1006,7 +801,8 @@ struct PlayerView: View {
             // another key entirely, and a held key repeats — a player walked
             // by a held arrow would fly through the queue as fast as the
             // keyboard could say so, and a held space would start and stop the
-            // music just as fast.
+            // music just as fast. (A held arrow while the progress line has
+            // the keyboard is the line's own walk, and the line steps on it.)
             let borrowed: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
             guard event.modifierFlags.isDisjoint(with: borrowed), !event.isARepeat else {
                 return event
@@ -1015,10 +811,13 @@ struct PlayerView: View {
             case 49:    // space, the one key a player cannot do without
                 MainActor.assumeIsolated { engine.toggle() }
                 return nil
-            case 123:   // left: this track again, or the one before it
+            case 123:   // left: the line's five seconds while it has the keyboard,
+                        // and this track again — or the one before it — otherwise
+                if barFocus.focused { return event }
                 MainActor.assumeIsolated { engine.previous() }
                 return nil
-            case 124:   // right: the next track
+            case 124:   // right: the line's step, or the next track
+                if barFocus.focused { return event }
                 MainActor.assumeIsolated { engine.next() }
                 return nil
             default:
@@ -1070,6 +869,14 @@ private struct Cover: View {
         }
         .aspectRatio(1, contentMode: .fit)
     }
+}
+
+/// Whether the progress line has the keyboard, kept where the key monitor can
+/// read it: the monitor was installed before SwiftUI's focus system and
+/// cannot ask a focus state directly, so the view keeps this little box told
+/// (the `onChange` of `barFocused`) and the monitor reads it instead.
+final class FocusBox: @unchecked Sendable {
+    var focused = false
 }
 
 /// What the providers of one drop turned up, in the order they were dropped.

@@ -22,10 +22,16 @@ enum WindowTemplate: String, CaseIterable {
         }
     }
 
+    /// The band the system's own toolbar owns. Frame sizes carry it and the
+    /// content the SwiftUI scene asks for by default does not; asked for by
+    /// name rather than measured, because the band is the system's and its
+    /// height is the system's too.
+    static let toolbarChrome: CGFloat = 52
+
     static var initialContentSize: NSSize {
         let remembered = WindowTemplate(rawValue: UserDefaults.standard.string(forKey: AppearancePreferences.template) ?? "")
         guard let frame = remembered?.frameSize else { return NSSize(width: 560, height: 420) }
-        return NSSize(width: frame.width, height: frame.height - 52)
+        return NSSize(width: frame.width, height: frame.height - toolbarChrome)
     }
 
     // Local to the templates; the old dynamic window keeps Metrics.side*.
@@ -83,7 +89,17 @@ enum AppearancePreferences {
 final class Presentation: ObservableObject {
     @Published private(set) var template: WindowTemplate
     @Published private(set) var preset: AppearancePreset?
-    @Published var sideOpen = false
+    /// Whether the side menu is out. The one word the toolbar's toggle, the
+    /// tray's tick, the keyboard and the split view's own binding all agree
+    /// on; the window makes room before it turns true, and the window's own
+    /// minimum follows it either way.
+    @Published var sideOpen = false {
+        didSet {
+            guard sideOpen != oldValue else { return }
+            if sideOpen { makeRoomForSidebar() }
+            refreshContentMinimum()
+        }
+    }
     @Published var sideWidth: Double {
         didSet { defaults.set(sideWidth, forKey: AppearancePreferences.side) }
     }
@@ -105,6 +121,43 @@ final class Presentation: ObservableObject {
 
     deinit {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// The narrowest the window's contents may be, said out loud: the formal
+    /// square while the column is away, and — while it is out — the column at
+    /// its own minimum plus the narrowest the player can be. That is the
+    /// split's arithmetic said in one number, and it is what leaves an
+    /// overlay nothing to grow from (issue #15: the window cannot become
+    /// narrower than the sidebar plus the content).
+    var contentMinWidth: CGFloat {
+        guard sideOpen else { return Metrics.side }
+        switch template {
+        case .horizontal: return Metrics.sideMin + Metrics.playerDrawerMin
+        case .vertical, .custom: return Metrics.sideMin + Metrics.playerMin
+        }
+    }
+
+    /// The same number, written on the window itself. SwiftUI writes it from
+    /// the view (App.swift); this is the window being told directly, so the
+    /// rule holds whichever of the two is heard first.
+    private func refreshContentMinimum() {
+        window?.contentMinSize = NSSize(width: contentMinWidth, height: Metrics.side)
+    }
+
+    /// Before the column comes out: a window too narrow to hold it beside the
+    /// player grows to fit both, its left edge kept where it is — the column
+    /// slides in beside a player that was never squeezed, and the slide
+    /// itself is the split's own motion, not this window's. The growth is put
+    /// on the way the templates are: quietly, and never mistaken for a hand's
+    /// own resize, which is what Custom is for.
+    private func makeRoomForSidebar() {
+        guard let window, window.frame.width < contentMinWidth else { return }
+        applyingFrame = true
+        defer { applyingFrame = false }
+        var frame = window.frame
+        frame.size.width = contentMinWidth
+        window.setFrame(frame, display: true, animate: false)
+        lastSize = window.frame.size
     }
 
     func select(_ wanted: WindowTemplate) {
@@ -147,6 +200,7 @@ final class Presentation: ObservableObject {
             applyingFrame = false
         }
         lastSize = window.frame.size
+        refreshContentMinimum()
         for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
             observers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main
@@ -157,15 +211,20 @@ final class Presentation: ObservableObject {
     }
 
     private func resize(_ window: NSWindow, to size: NSSize) {
-        // Preserve the top-left, not the bottom-left; no intermediate animated
-        // frames, no accidental Custom, and no motion even with Reduce Motion.
+        // The system does the arithmetic: the template's frame size is put
+        // through the window's own frame-to-content conversion, `setContentSize`
+        // puts it on, and the top-left corner is put back where the hand left
+        // it. No intermediate animated frames, no accidental Custom, and no
+        // motion even with Reduce Motion.
         applyingFrame = true
-        var frame = window.frame
-        frame.origin.y += frame.height - size.height
-        frame.size = size
-        window.setFrame(frame, display: true, animate: false)
+        defer { applyingFrame = false }
+        let top = window.frame.maxY
+        let content = window.contentRect(forFrameRect: NSRect(origin: .zero, size: size)).size
+        window.setContentSize(content)
+        if window.frame.maxY != top {
+            window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
+        }
         lastSize = window.frame.size
-        applyingFrame = false
     }
 
     private func frameChanged() {

@@ -3,11 +3,13 @@ import SwiftUI
 
 // The side menu: the browser's own column, with playlists in it.
 //
-// The mechanics are the browser's (dajet-browser/Sources/Dajet/Side.swift and
-// Fold.swift): the column rests at 232 points and can be pulled between 176 and
-// 440 by its own edge, it comes and goes on one spring (Motion.glide), and it
-// slides out over the player rather than shoving it. What is new here is what
-// is *inside* it — playlists.
+// The column is an element of the window's split view now (App.swift): its
+// width lives between the numbers the window hands the column, its edge is
+// the system's own divider, and its coming and going is the system's own
+// animation. There is no spring here, no hand on any edge and no shadow cast
+// on a neighbour, because a split element is beside its detail by
+// construction and has none of a drawer's work left to do (issue #15). What
+// is inside it is what it always was: playlists.
 //
 // A playlist is a folder of music: the ones that were added (⌘O, or dropped on
 // the window) and not yet removed. They are kept in a small file of their own
@@ -19,12 +21,10 @@ import SwiftUI
 // (P-10). The toggle is the window's toolbar's, at the leading end beside the
 // traffic lights, and it is there whether the column is out or away — which is
 // the whole of what a toggle has to be, and is why the column does not need a
-// second one. What is left of the band a hand drew there was a guess at where
-// the traffic lights are and a strip that took a drag on the window's behalf;
-// the toolbar is given both by the platform. The foot's "Add Folder…" was the
-// third way of doing a thing the toolbar's button, the tray's menu and ⌘O
-// already do, in the one window that shows all of them at once — and an element
-// that duplicates the toolbar is an element the owner asked to have out.
+// second one. The foot's "Add Folder…" was the third way of doing a thing the
+// toolbar's button, the tray's menu and ⌘O already do, in the one window that
+// shows all of them at once — and an element that duplicates the toolbar is an
+// element the owner asked to have out.
 //
 // A click on a playlist shows its tracks and plays it — opening a folder plays
 // it, which is the contract the playback core was built on and is not this
@@ -36,21 +36,14 @@ import SwiftUI
 struct SideMenu: View {
     @ObservedObject var engine: PlayerEngine
     @ObservedObject var playlists: Playlists
-    /// The width the column has in the window, and the two it lives between.
-    @Binding var span: Double
     /// A number that goes up whenever an open list is out of date — the menu
     /// has just come out, or a folder has just been added — so that the tracks
     /// shown are the folder's tracks now and not the ones from an hour ago.
     var refresh: Int
-    var widthRange: ClosedRange<Double> = Double(Metrics.sideMin)...Double(Metrics.sideMax)
-    var restingWidth: Double = Double(Metrics.side)
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// The playlist whose tracks are shown. One at a time, which is what a
     /// column this narrow can hold honestly.
     @State private var showing: Playlist.ID?
-    /// The width the column had when its edge was picked up.
-    @State private var grabbed: Double?
-    @State private var onEdge = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -62,30 +55,19 @@ struct SideMenu: View {
             }
             Spacer(minLength: 0)
         }
-        // The width is the window's decision and not this column's: the player
-        // clamps it to the room there is, so that a window narrower than the
-        // column is a window with a drawer over the player rather than a column
-        // hanging off the edge of the glass (P-10). What the column owns is the
-        // range it is pulled between, and the edge that pulls it.
+        // The width is the split's decision, between the range App.swift hands
+        // the column; what the column still owns is what it draws. And what it
+        // is made of is what it always was: the window's own surface and one
+        // almost-opaque tile (Palette.side: a step deeper than the glass in
+        // the light theme, a step lighter than the matte in the dark).
+        // Deliberately *not* a second pane of glass — a material laid under a
+        // material is the one thing the platform's own guidance says never to
+        // do — and deliberately without the shadow and the hairline it wore as
+        // a drawer: the divider the split draws is the line between the two
+        // panes now.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, Metrics.gap)
-        // What the column is made of: the window's own surface and nothing
-        // else. Deliberately *not* a second pane of glass — a material laid
-        // under a material is the one thing the platform's own guidance says
-        // never to do, and it is right: two translucent layers read as fog,
-        // and the second one only blurs the first one's blur. So the column is
-        // one almost-opaque tile over the window (Palette.side: a step
-        // deeper than the glass in the light theme, a step lighter than the
-        // matte in the dark), and the hairline and the shadow at its edge are
-        // what say it is a column rather than a shade.
         .background(reduceTransparency ? Palette.ground : Palette.side)
-        // The shadow it casts on what it is over, which is what says it is
-        // *over* something rather than beside it.
-        .shadow(color: .black.opacity(0.18), radius: 14, x: 4)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(Palette.hairline).frame(width: 1)
-        }
-        .overlay(alignment: .trailing) { edge }
         // A folder becoming what is playing — dropped, chosen from the panel,
         // or clicked in this very menu — is the one that should be open.
         .onChange(of: engine.source) { _, source in
@@ -137,35 +119,6 @@ struct SideMenu: View {
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// The column's edge: pull it to size the column, double-click it to put
-    /// it back to where it rests. The hairline darkens under the pointer, so
-    /// the edge says it can be taken before it is — the browser's edge, at the
-    /// same width and with the same cursor.
-    private var edge: some View {
-        Rectangle()
-            .fill(Palette.ink.opacity(onEdge || grabbed != nil ? 0.18 : 0))
-            .frame(width: onEdge || grabbed != nil ? 2 : 1)
-            .frame(width: Metrics.pull)
-            .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { hand in
-                        if grabbed == nil { grabbed = span }
-                        let wanted = (grabbed ?? span) + Double(hand.translation.width)
-                        span = min(widthRange.upperBound, max(widthRange.lowerBound, wanted))
-                    }
-                    .onEnded { _ in grabbed = nil }
-            )
-            .onTapGesture(count: 2) {
-                withAnimation(Motion.settle) { span = restingWidth }
-            }
-            .animation(Motion.quick, value: onEdge)
     }
 
     // MARK: - what a click does
