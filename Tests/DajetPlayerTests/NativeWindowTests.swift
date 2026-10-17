@@ -33,8 +33,9 @@ final class NativeWindowTests: XCTestCase {
 
     /// The split's arithmetic said out loud: the formal square while the
     /// column is away, and — while it is out — the column at its own minimum
-    /// plus the narrowest the player can be, per template, because the wide
-    /// card's floor is the H-B 324 and the tall card's is the player's 200.
+    /// plus the width of the template's own player: 408 for the tall card,
+    /// 724 for the wide one, the player never squeezed under its template
+    /// (issue #16). Custom, which has no template, keeps the strip it had.
     func testContentMinimumMatrix() {
         let (store, name) = defaults()
         defer { store.removePersistentDomain(forName: name) }
@@ -44,14 +45,20 @@ final class NativeWindowTests: XCTestCase {
                        "with the column away, the window's floor is the formal square")
 
         model.sideOpen = true
-        XCTAssertEqual(model.contentMinWidth, Metrics.sideMin + Metrics.playerMin,
-                       "the tall card's floor is the column plus the player's 200")
+        XCTAssertEqual(model.contentMinWidth, 408,
+                       "the tall card beside the column: the column plus the template's own 232")
+        XCTAssertEqual(model.contentMinWidth,
+                       Metrics.sideMin + WindowTemplate.vertical.frameSize!.width,
+                       "said the same through the template's own width")
 
         model.select(.horizontal)
         XCTAssertFalse(model.sideOpen, "a template switch closes the column")
         model.sideOpen = true
-        XCTAssertEqual(model.contentMinWidth, Metrics.sideMin + Metrics.playerDrawerMin,
-                       "the wide card's floor is the column plus the H-B 324")
+        XCTAssertEqual(model.contentMinWidth, 724,
+                       "the wide card beside the column: the column plus the template's own 548")
+        XCTAssertEqual(model.contentMinWidth,
+                       Metrics.sideMin + WindowTemplate.horizontal.frameSize!.width,
+                       "said the same through the template's own width")
     }
 
     // MARK: - the room made before the column arrives
@@ -115,16 +122,17 @@ final class NativeWindowTests: XCTestCase {
     }
 
     /// The numbers the split is told, in one place: the templates' own range
-    /// and resting width for the column, the floors for the player. The
-    /// divider holds the column in the range; the window's minimum holds the
-    /// player above the floor.
+    /// and resting width for the column, and Custom's own floor for the
+    /// player — the templates need none of that kind, their players keeping
+    /// the template's own width beside the column (issue #16). The divider
+    /// holds the column in the range; the window's minimum holds the rest.
     func testTheNumbersTheSplitIsTold() {
         XCTAssertEqual(WindowTemplate.sideRange, 176.0...240.0)
         XCTAssertEqual(WindowTemplate.sideRest, 200)
         XCTAssertEqual(Metrics.sideMin, 176)
         XCTAssertEqual(Metrics.sideMax, 440)
-        XCTAssertEqual(Metrics.playerMin, 200)
-        XCTAssertEqual(Metrics.playerDrawerMin, 324)
+        XCTAssertEqual(Metrics.playerMin, 200,
+                       "Custom's floor — the one template-less width")
         XCTAssertEqual(Metrics.scrubStrip, 16,
                        "the strip a hand and the keyboard land on is at least sixteen points")
         XCTAssertEqual(WindowTemplate.toolbarChrome, 52)

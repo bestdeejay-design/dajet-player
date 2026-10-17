@@ -155,11 +155,6 @@ enum Metrics {
     static let side: CGFloat = 232
     static let sideMin: CGFloat = 176
     static let sideMax: CGFloat = 440
-    /// The narrowest the wide card is ever squeezed to — the H-B measured
-    /// 324: a 160 sleeve, 12 of air, 152 of column. While the column is out
-    /// this is the player's floor, and the window's own minimum is built on
-    /// it (see Presentation.contentMinWidth).
-    static let playerDrawerMin: CGFloat = 324
     /// The strip a hand and the keyboard land on around the progress line:
     /// the line is the drawing, this is the hit zone — sixteen points, the
     /// least the platform's own controls would carry (issue #15).
@@ -167,10 +162,11 @@ enum Metrics {
     /// The air above the column's first row, now that the column has no band of
     /// its own to hold it away from the toolbar.
     static let gap: CGFloat = 10
-    /// The narrowest the tall card is ever squeezed to, and the floor the
-    /// split's detail stands on: a window that cannot hold column and player
-    /// grows instead — the column is beside the player now, and nothing is
-    /// ever over anything (issue #15).
+    /// The floor of Custom, which has no template to name a width of its own:
+    /// the narrowest the player in a Custom window is ever squeezed to. The
+    /// templates need no floor of this kind — beside the column their player
+    /// keeps its template's own width, and the window's minimum is built on
+    /// that (see Presentation.contentMinWidth, issue #16).
     static let playerMin: CGFloat = 200
     /// The width from which the foot of the window has room for all seven of
     /// its controls on one row — the two modes, the three hands and the volume,

@@ -125,16 +125,18 @@ final class Presentation: ObservableObject {
 
     /// The narrowest the window's contents may be, said out loud: the formal
     /// square while the column is away, and — while it is out — the column at
-    /// its own minimum plus the narrowest the player can be. That is the
-    /// split's arithmetic said in one number, and it is what leaves an
-    /// overlay nothing to grow from (issue #15: the window cannot become
-    /// narrower than the sidebar plus the content).
+    /// its own minimum plus the width of the template's own player. The
+    /// player beside the column is the player at its template size, never a
+    /// squeezed one: 176 + 232 = 408 for the tall card, 176 + 548 = 724 for
+    /// the wide one (issue #16: the player must not be narrowed under the
+    /// template it belongs to). Custom, which has no template of its own,
+    /// keeps the strip it always had. That is the split's arithmetic said in
+    /// one number, and it is what leaves an overlay nothing to grow from
+    /// (issue #15: the window cannot become narrower than the sidebar plus
+    /// the content).
     var contentMinWidth: CGFloat {
         guard sideOpen else { return Metrics.side }
-        switch template {
-        case .horizontal: return Metrics.sideMin + Metrics.playerDrawerMin
-        case .vertical, .custom: return Metrics.sideMin + Metrics.playerMin
-        }
+        return Metrics.sideMin + (template.frameSize?.width ?? Metrics.playerMin)
     }
 
     /// The same number, written on the window itself. SwiftUI writes it from

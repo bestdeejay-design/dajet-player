@@ -13,9 +13,11 @@ import UniformTypeIdentifiers
 // everything else.
 //
 // Along the top of the window there is a toolbar, and it is the system's own
-// (P-10): the side menu's toggle at the leading end beside the traffic lights,
+// (P-10): the side menu's toggle at the leading end beside the traffic lights
+// is the split view's own — the one NavigationSplitView puts there itself —
 // and the two things a player can be told about itself — a folder, and which
-// of the three looks it wears — at the other.
+// of the three looks it wears — are at the other. The window keeps no toggle
+// of its own: two identical switches taught nobody anything (issue #16).
 //
 // The side menu is no longer a view the window pulls over itself: it is an
 // element of a two-column `NavigationSplitView` — on macOS the wrapper around
@@ -24,7 +26,7 @@ import UniformTypeIdentifiers
 // never be *over* the player again, because a split element is beside its
 // detail by construction (issue #15). The window's own minimum says the same
 // thing out loud: while the column is out, the window is never narrower than
-// the column plus the narrowest the player can be — `contentMinSize`, said
+// the column plus the template's own width — `contentMinSize`, said
 // from the view here and written on the window itself by Presentation, and
 // before the column comes out in a window too narrow for both, the window
 // grows to hold them. The hand-pulled edge, the spring of its own, and the
@@ -86,12 +88,22 @@ struct DajetPlayerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
-            // The system's own View ▸ Toggle Sidebar, wired by the system to
-            // the window's split view: the one menu-bar item a column toggle
-            // is allowed to gain, in the place and with the shortcut the
-            // platform puts it (⌃⌘S). The browser's ⌥⌘S is still heard by the
-            // window itself, below.
-            SidebarCommands()
+            // The View menu's word for the column — the one menu-bar item a
+            // column toggle keeps — said through the window's single road:
+            // `sideOpen`, the same word the toolbar's system toggle, the
+            // tray's tick and the split's own binding say. The system's own
+            // `SidebarCommands` went with the AppKit action it carries: that
+            // action toggles the split behind the binding's back — it answers
+            // success, and the column comes back to where the binding says it
+            // lies (issue #16). The shortcut is the browser's own ⌥⌘S, which
+            // the key monitor used to carry and the menu now does, in one
+            // place.
+            CommandMenu("View") {
+                Button("Toggle Side Menu") {
+                    withAnimation(.smooth) { tray.presentation.sideOpen.toggle() }
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+            }
         }
     }
 }
@@ -108,9 +120,6 @@ struct PlayerView: View {
 
     /// The look that is on, kept between runs under the one key.
     @AppStorage(Theme.key) private var lookName = Theme.system.rawValue
-    /// Whether the side menu is out — said once here, because the toolbar's
-    /// help and the keyboard both want the window's own word for it.
-    private var menu: Bool { presentation.sideOpen }
     /// A number that goes up when the menu's lists are out of date — it has
     /// just come out, or a folder has just been added.
     @State private var fresh = 0
@@ -178,7 +187,8 @@ struct PlayerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The window's minimum, in the one place that sees both states: the
         // formal square while the column is away, and — while it is out — the
-        // column plus the narrowest the player can be. Presentation says the
+        // column plus the width of the template's own player (the player is
+        // never squeezed under its template; issue #16). Presentation says the
         // same number to the window itself; between the two of them, an
         // overlay has nothing left to be (issue #15).
         .frame(minWidth: presentation.contentMinWidth, minHeight: Metrics.side)
@@ -192,25 +202,13 @@ struct PlayerView: View {
         }
         .animation(Motion.quick, value: taking)
         .toolbar {
-            // The side menu's toggle, at the leading end and beside the traffic
-            // lights, where a toggle for a column on the left belongs and where
-            // macOS puts one: visible whether the column is out or away, which
-            // is the whole of what a toggle has to be. Its action is the
-            // system's own `toggleSidebar`, which the split answers with the
-            // system's own animation — this window keeps no flag of its own to
-            // animate (issue #15).
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    toggleSidebar()
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                }
-                .buttonStyle(.borderless)
-                .help(menu
-                      ? "Hide the side menu   ⌥⌘S"
-                      : "Show the side menu — playlists and their tracks   ⌥⌘S")
-                .accessibilityLabel(menu ? "Hide the side menu" : "Show the side menu")
-            }
+            // The side menu's toggle is not here: the split view brings its own
+            // — at the leading end, beside the traffic lights, where a toggle
+            // for a column on the left belongs — and its press lands in the
+            // visibility binding below, the same single road every other
+            // toggler takes. A second switch of our own above it was two
+            // identical buttons for one job (issue #16).
+            //
             // The two things a player can be told about itself: a folder, and
             // which of the three looks it wears. Both were icons in a band of
             // the window's own before, and both are the platform's now.
@@ -298,9 +296,12 @@ struct PlayerView: View {
     }
 
     /// The split's column visibility, seen from the window's own word for it:
-    /// the toolbar's toggle, the tray's tick, the keyboard and the View menu
+    /// the system's toolbar toggle, the tray's tick, the View menu and ⌥⌘S
     /// all say `sideOpen`, and the split says it back through this same
-    /// binding when the system's own toggle, divider or menu item moves it.
+    /// binding when the system's own toggle or divider moves it. The set
+    /// keeps to the two answers the macOS split writes into the binding —
+    /// the column out is `.all`, the column away is `.detailOnly` — and
+    /// anything else means nothing this window listens to.
     private var column: Binding<NavigationSplitViewVisibility> {
         Binding(
             get: { presentation.sideOpen ? .all : .detailOnly },
@@ -317,23 +318,6 @@ struct PlayerView: View {
                 }
             }
         )
-    }
-
-    /// The toolbar's toggle, said the system's way: `toggleSidebar(_:)` on the
-    /// responder chain — NSSplitViewController's own action, documented since
-    /// 10.11, the one every sidebar button in every Mac app sends — which
-    /// NavigationSplitView's own split controller answers with the system's
-    /// own animation, and then says what it did back through the visibility
-    /// binding above. SwiftUI names no environment action for this: none is
-    /// documented (`\.toggleSidebar` resolves to nothing in the SDK), so the
-    /// window asks AppKit the way AppKit asks itself. Nobody in the chain to
-    /// answer — a window whose split is not there — and the binding moves the
-    /// column itself, which the split animates all the same (issue #15).
-    private func toggleSidebar() {
-        if !NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)),
-                             to: nil, from: nil) {
-            presentation.sideOpen.toggle()
-        }
     }
 
     private var look: Theme { Theme(rawValue: lookName) ?? .system }
@@ -790,31 +774,21 @@ struct PlayerView: View {
     /// monitor listening for them would be a second way to play the same
     /// thing.
     ///
-    /// Two keys here are not keys of the player's own. ⌥⌘S is the side menu —
-    /// the browser's own shortcut for its column — and it moves the column the
-    /// way the toolbar's toggle does, inside a transaction the split animates.
-    /// And the two arrows belong to the progress line while it has the
-    /// keyboard (its five seconds at a time, issue #15): the monitor reads the
-    /// line's own little box and lets them through to it.
+    /// The two arrows are not keys of the player's own: they belong to the
+    /// progress line while it has the keyboard (its five seconds at a time,
+    /// issue #15), and the monitor reads the line's own little box and lets
+    /// them through to it. ⌥⌘S, the side menu's own shortcut, is not here —
+    /// the View menu carries it now, the one place a menu shortcut is said
+    /// in, and the monitor leaves modified keys alone for the menu to answer
+    /// (issue #16).
     private func watchKeys() {
         guard keys == nil else { return }
         let engine = engine
-        let presentation = presentation
         let barFocus = barFocus
         keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Nothing here is a key in the folder panel: that panel is this
             // app's too, and its keys are its own.
             guard !(event.window is NSPanel) else { return event }
-            // The side menu's own shortcut, before the rule that throws
-            // modified keys away.
-            let menuKeys: NSEvent.ModifierFlags = [.command, .option]
-            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == menuKeys,
-               event.charactersIgnoringModifiers?.lowercased() == "s" {
-                MainActor.assumeIsolated {
-                    withAnimation(.smooth) { presentation.sideOpen.toggle() }
-                }
-                return nil
-            }
             // Bare keys, and one press at a time: a modifier makes a key into
             // another key entirely, and a held key repeats — a player walked
             // by a held arrow would fly through the queue as fast as the
