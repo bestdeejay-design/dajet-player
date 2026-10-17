@@ -98,7 +98,10 @@ struct DajetPlayerApp: App {
             // lies (issue #16). The shortcut is the browser's own ⌥⌘S, which
             // the key monitor used to carry and the menu now does, in one
             // place.
-            CommandMenu("View") {
+            // In the View menu the system already owns, not in a second menu
+            // of the same name: two "View"s in the menu bar read as breakage
+            // (acceptance, P4).
+            CommandGroup(after: .toolbar) {
                 Button("Toggle Side Menu") {
                     withAnimation(.smooth) { tray.presentation.sideOpen.toggle() }
                 }
