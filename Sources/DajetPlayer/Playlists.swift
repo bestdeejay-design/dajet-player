@@ -136,9 +136,13 @@ enum Chooser {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        // Where music lives on an ordinary Mac, to save the walk there.
-        panel.directoryURL = FileManager.default
-            .urls(for: .musicDirectory, in: .userDomainMask).first
+        // Where music lives on an ordinary Mac, to save the walk there on the
+        // first run; afterwards the panel's own remembered directory
+        // (`NSOSPLastRootDirectory`) is left in charge.
+        if UserDefaults.standard.object(forKey: "NSOSPLastRootDirectory") == nil {
+            panel.directoryURL = FileManager.default
+                .urls(for: .musicDirectory, in: .userDomainMask).first
+        }
         panel.prompt = "Play"
         panel.message = "A folder of music: \(PlayerEngine.kinds). It joins the side menu."
         guard panel.runModal() == .OK, let folder = panel.urls.first else { return }

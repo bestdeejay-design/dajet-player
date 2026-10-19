@@ -88,6 +88,10 @@ final class PlayerEngine: ObservableObject {
     /// and neither cares which of the three they did.
     private static var nothingPlays: String { "Nothing there to play — \(kinds) only." }
 
+    /// Said when the remembered folder has been moved, renamed, deleted, or
+    /// sits on a disk that is not plugged in any more.
+    static let folderUnavailable = "The last folder is no longer available — ⌘O or drop another."
+
     // MARK: - what the window reads
 
     @Published private(set) var state: State = .idle
@@ -218,14 +222,25 @@ final class PlayerEngine: ObservableObject {
     /// background wears the same picture blurred. Nil for a file with no
     /// cover, and nil until the reading comes back.
     private var card: MPMediaItemArtwork?
+    /// The defaults store this engine reads and writes its remembered settings
+    /// and folder bookmark to. Standard defaults in the app; an isolated suite
+    /// in tests.
+    private let defaults: UserDefaults
+    /// Holds the active security-scoped folder URL and balances its access
+    /// lifecycle across folder switches and termination.
+    private let scope = ScopeBox()
 
-    /// The two things this app keeps between runs, kept in the plainest
-    /// drawer macOS has: the standard defaults, this app's own little corner
-    /// of them. One number and one flag, on this Mac, for this app — nothing
-    /// is sent anywhere, and nothing is written by hand.
-    private enum Remembered {
+    /// The folder currently held under security-scoped access, if any.
+    var scopedFolder: URL? { scope.folder }
+
+    /// What this player keeps between runs, in the plainest drawer macOS has:
+    /// the standard defaults, this app's own little corner of them. Volume,
+    /// mute, and a security-scoped bookmark for the last opened folder —
+    /// nothing is sent anywhere, and nothing is written by hand.
+    enum Remembered {
         static let volume = "volume"
         static let muted = "muted"
+        static let folder = "folderBookmark"
     }
 
     // MARK: - starting up
@@ -233,23 +248,24 @@ final class PlayerEngine: ObservableObject {
     /// The player is made once and is the app's for as long as the app runs:
     /// the volume and the mute are put back from the last time, the Mac's
     /// media keys are handed the same five things the window's buttons do,
-    /// and the player's clock is asked to say where the track is while it
-    /// plays. All of it before anything is opened, so that the first track
-    /// ever played is played at the volume that was chosen for it.
-    init() {
-        let remembered = UserDefaults.standard
+    /// the player's clock is asked to say where the track is while it plays,
+    /// and the last opened folder — if a bookmark was kept for one — is put
+    /// back into the queue ready to play.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         // A volume nobody has ever set is not nought: `float(forKey:)` says
         // nought for a key that was never written, and a player that opens
         // silent is a player that looks broken. Full, then, until told
         // otherwise.
-        if remembered.object(forKey: Remembered.volume) != nil {
-            volume = min(max(remembered.float(forKey: Remembered.volume), 0), 1)
+        if defaults.object(forKey: Remembered.volume) != nil {
+            volume = min(max(defaults.float(forKey: Remembered.volume), 0), 1)
         }
-        muted = remembered.bool(forKey: Remembered.muted)
+        muted = defaults.bool(forKey: Remembered.muted)
         player.volume = volume
         player.isMuted = muted
         hearKeys()
         followTheHead()
+        restoreFolder()
     }
 
     // MARK: - opening
@@ -263,13 +279,21 @@ final class PlayerEngine: ObservableObject {
     /// a second folder on a player that was told to shuffle gives a shuffled
     /// folder.
     func open(_ urls: [URL]) {
+        let candidate = Self.folder(among: urls)
+        let started = candidate.map { folder -> Bool in
+            guard !scope.isCurrent(folder) else { return scope.accessing }
+            return folder.startAccessingSecurityScopedResource()
+        } ?? false
         let files = urls.flatMap(music)
         guard !files.isEmpty else {
+            if let candidate, !scope.isCurrent(candidate) {
+                candidate.stopAccessingSecurityScopedResource()
+            }
             forget()
             note = Self.nothingPlays
             return
         }
-        adopt(files, from: Self.folder(among: urls))
+        adopt(files, from: candidate, alreadyAccessing: started, savingBookmark: true)
         play(0)
     }
 
@@ -294,9 +318,20 @@ final class PlayerEngine: ObservableObject {
             play(place)
             return
         }
+        let started: Bool
+        if scope.isCurrent(folder) {
+            started = scope.accessing
+        } else {
+            started = folder.startAccessingSecurityScopedResource()
+        }
         let files = music(folder)
-        guard let index = files.firstIndex(where: { Playlist.plain($0) == wanted }) else { return }
-        adopt(files, from: folder)
+        guard let index = files.firstIndex(where: { Playlist.plain($0) == wanted }) else {
+            if !scope.isCurrent(folder) {
+                folder.stopAccessingSecurityScopedResource()
+            }
+            return
+        }
+        adopt(files, from: folder, alreadyAccessing: started, savingBookmark: true)
         play(order.firstIndex(of: index) ?? 0)
     }
 
@@ -304,12 +339,126 @@ final class PlayerEngine: ObservableObject {
     /// when it came from one. The two modes are left as the listener set them,
     /// so that playing a second folder on a player that was told to shuffle
     /// gives a shuffled folder.
-    private func adopt(_ files: [URL], from folder: URL?) {
+    private func adopt(
+        _ files: [URL],
+        from folder: URL?,
+        alreadyAccessing: Bool = false,
+        savingBookmark: Bool = true
+    ) {
+        if let folder {
+            scope.replace(with: folder, accessing: alreadyAccessing)
+            if savingBookmark { saveBookmark(for: folder) }
+        } else {
+            scope.stop()
+        }
         queue = files
         source = folder
         count = files.count
         said = [:]
         newPass()
+    }
+
+    // MARK: - remembering the folder
+
+    /// Store a security-scoped bookmark for `folder` in `UserDefaults`,
+    /// replacing any previous folder bookmark so no stale entry remains.
+    private func saveBookmark(for folder: URL) {
+        let data = (try? folder.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )) ?? (try? folder.standardizedFileURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ))
+        guard let data else { return }
+        defaults.set(data, forKey: Remembered.folder)
+    }
+
+    /// Restore the last opened folder from its security-scoped bookmark in
+    /// `UserDefaults`. With no bookmark saved, the player stays in its
+    /// ordinary empty state. When the bookmarked folder has been deleted,
+    /// renamed, moved to the Trash, or sits on an unmounted disk, the bookmark
+    /// is removed and a calm note is left in the empty state.
+    private func restoreFolder() {
+        guard defaults.object(forKey: Remembered.folder) != nil else { return }
+        guard let data = defaults.data(forKey: Remembered.folder) else {
+            forgetBookmark()
+            note = Self.folderUnavailable
+            return
+        }
+        var stale = false
+        let resolved = (try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope, .withoutMounting],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        )) ?? (try? URL(
+            resolvingBookmarkData: data,
+            options: [.withoutMounting],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ))
+        let expectedPath = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: data)?.path
+        let moved: Bool
+        if let folder = resolved, let expectedPath {
+            moved = Self.canonical(URL(fileURLWithPath: expectedPath)) != Self.canonical(folder)
+        } else {
+            moved = stale
+        }
+        guard let folder = resolved, !stale, !moved, !Self.isInTrash(folder) else {
+            if let resolved {
+                _ = resolved.startAccessingSecurityScopedResource()
+                resolved.stopAccessingSecurityScopedResource()
+            }
+            forgetBookmark()
+            note = Self.folderUnavailable
+            return
+        }
+        scope.begin(folder)
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory)
+        guard exists, isDirectory.boolValue,
+              (try? FileManager.default.contentsOfDirectory(
+                  at: folder, includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              )) != nil else {
+            forgetBookmark()
+            note = Self.folderUnavailable
+            return
+        }
+        let files = Self.tracks(in: folder)
+        guard !files.isEmpty else {
+            forgetBookmark()
+            note = Self.nothingPlays
+            return
+        }
+        adopt(files, from: folder, alreadyAccessing: scope.accessing, savingBookmark: false)
+        play(0, sounding: false)
+    }
+
+    /// Relinquish security-scoped access to the current folder, if one is held.
+    /// Called on app termination and when switching or clearing folders.
+    func stopAccessingFolder() {
+        scope.stop()
+    }
+
+    /// Stop security-scoped access and remove the stored bookmark from
+    /// `UserDefaults`.
+    private func forgetBookmark() {
+        scope.stop()
+        defaults.removeObject(forKey: Remembered.folder)
+    }
+
+    private static func canonical(_ url: URL) -> String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
+    private static func isInTrash(_ url: URL) -> Bool {
+        let path = canonical(url)
+        return path.contains("/.Trash/") || path.contains("/.Trashes/")
     }
 
     /// The folder a drop was, when it was exactly one thing and that thing was
@@ -484,7 +633,7 @@ final class PlayerEngine: ObservableObject {
         guard wanted != volume else { return }
         volume = wanted
         player.volume = wanted
-        UserDefaults.standard.set(wanted, forKey: Remembered.volume)
+        defaults.set(wanted, forKey: Remembered.volume)
     }
 
     /// Mute, on and off: silence without losing the place the volume slider
@@ -492,7 +641,7 @@ final class PlayerEngine: ObservableObject {
     func toggleMute() {
         muted.toggle()
         player.isMuted = muted
-        UserDefaults.standard.set(muted, forKey: Remembered.muted)
+        defaults.set(muted, forKey: Remembered.muted)
     }
 
     /// The progress bar let go of: the track is taken to that place — seconds
@@ -759,6 +908,7 @@ final class PlayerEngine: ObservableObject {
     /// Let go of everything: nothing playing, and nothing left to play.
     private func forget() {
         stop()
+        scope.stop()
         queue = []
         source = nil
         order = []
@@ -1055,6 +1205,48 @@ final class PlayerEngine: ObservableObject {
         let size = CGSize(width: CGFloat(cover.width), height: CGFloat(cover.height))
         let picture = NSImage(cgImage: cover, size: size)
         return MPMediaItemArtwork(boundsSize: size) { _ in picture }
+    }
+}
+
+/// Holds the active security-scoped folder URL and balances its access
+/// lifecycle across folder switches, app termination, and deallocation.
+private final class ScopeBox: @unchecked Sendable {
+    private(set) var folder: URL?
+    private(set) var accessing = false
+
+    func isCurrent(_ url: URL) -> Bool {
+        guard let folder else { return false }
+        return Self.canonical(folder) == Self.canonical(url)
+    }
+
+    func begin(_ url: URL) {
+        if isCurrent(url) { return }
+        stop()
+        accessing = url.startAccessingSecurityScopedResource()
+        folder = url
+    }
+
+    func replace(with url: URL, accessing: Bool) {
+        if isCurrent(url) { return }
+        stop()
+        self.accessing = accessing
+        self.folder = url
+    }
+
+    func stop() {
+        guard let current = folder else { return }
+        current.stopAccessingSecurityScopedResource()
+        folder = nil
+        accessing = false
+    }
+
+    deinit {
+        stop()
+    }
+
+    private static func canonical(_ url: URL) -> String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 }
 
