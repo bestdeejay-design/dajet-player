@@ -1,14 +1,20 @@
 # media — where the pictures under `assets/` come from
 
-Everything the player wears outside its own window is made here: the icon, the
-five promo screenshots, the two social cards and the README's two banners. The
-pictures are committed, so nothing here has to run for the repository to be
-whole — this folder is how they were made, and how they are made again.
+Everything the player wears outside its own window is made here: the five promo
+screenshots, the two social cards and the README's two banners. The pictures are
+committed, so nothing here has to run for the repository to be whole — this
+folder is how they were made, and how they are made again.
+
+The **icon is not made here.** It is drawn by `Icon/icon.swift` — the canon, in
+Swift, generated at build time, with no image asset kept in the repository — and
+`build.sh` puts it into the app. What these generators share with it is the
+geometry in `mark.mjs`, so the banners and the cards carry the same mark the app
+wears without drawing an icon of their own.
 
 ```bash
 cd media
 npm install        # @napi-rs/canvas and sharp, the two tools that draw
-node build.mjs     # writes ../assets: icon, screenshots, cards, banners
+node build.mjs     # writes ../assets: screenshots, cards, banners
 ```
 
 Requires Node 20 or later. Neither dependency ships in the app: the app is
@@ -19,8 +25,8 @@ check is about the Swift package, not about a folder of picture makers.
 
 | File | Writes | What it is |
 |---|---|---|
-| `icon.mjs` | `assets/icon.svg`, `assets/icon-1024.png`, `assets/AppIcon.icns`, `assets/icon-16x16-enlarged.png` | the mark: Apple's squircle filling the canvas, the series' near-black, one terracotta wave |
-| `check-icns.mjs` | — | unpacks `AppIcon.icns` and verifies every entry has plate and mark pixels, and a plate that fills it |
+| `mark.mjs` | — | the player's mark as geometry: the squircle and the wave, shared by the banners and the cards (the icon itself is `Icon/icon.swift`) |
+| `check-icns.mjs` | — | unpacks `AppIcon.icns` (from `build/`, drawn by `Icon/icon.swift`) and verifies every entry has plate and mark pixels, and a plate that fills it |
 | `screens.mjs` | `assets/screenshots/*.png` | the window, in its templates, at 2x |
 | `og.mjs` | `assets/og-player-1200.jpg`, `assets/og-player-1080.jpg` | the two social cards |
 | `svg.mjs` | `assets/header.svg`, `assets/footer.svg` | the README's banners, drawn as SVG so a README can be any width |
@@ -51,17 +57,17 @@ screenshots show is what Inter looks like where SF Pro would be.
 
 The mark is the player's own wave (`Design.swift`, `Wave`): one sine, two
 crests, stroked with round ends. On the icon it is drawn on the 1024 canvas of
-macOS's icon grid with the body at 824 and the corner at `0.2253 × 824` — the
-squircle is a superellipse, n = 5. The line is 74/1024, the same at every
-entry: the SVG is rendered once at full resolution and downscaled with Lanczos
-to each target size, so the small entries are a faithful shrink of the same
-picture, not a redrawn one.
+macOS's icon grid with the plate filling the canvas and the corner at
+`0.2253 × 1024` — the squircle is a superellipse, n = 5. The line is 92/1024,
+the same at every entry: the icon is rendered once at full resolution and
+downscaled to each target size, so the small entries are a faithful shrink of
+the same picture, not a redrawn one. The numbers live in `Icon/icon.swift`
+(the canon) and in `mark.mjs` (the same geometry, for the banners and cards).
 
 The `.icns` carries ten PNG entries — 16, 32, 128, 256, 512 and 1024 points at
-one and two pixels per point — which is the grid Apple's own icons use, and it
-is written by hand in `icon.mjs` rather than by `iconutil`, because `iconutil`
-is macOS's and this folder runs anywhere. macOS 10.7 and later read PNG
-entries; the old raw-bitmap types are for systems this app does not run on.
+one and two pixels per point — which is the grid Apple's own icons use. macOS
+10.7 and later read PNG entries; the old raw-bitmap types are for systems this
+app does not run on.
 
 ## The verification
 
@@ -83,6 +89,6 @@ margin is a defect, not a style: macOS 26 draws a plate of its own behind an
 icon that has one.
 
 ```bash
-node media/check-icns.mjs                       # checks assets/AppIcon.icns
+node media/check-icns.mjs                       # checks build/AppIcon.icns
 node media/check-icns.mjs path/to/icon.icns     # checks that file
 ```

@@ -26,8 +26,12 @@
 //   1 — at least one entry is blank or noise (plate = 0 AND mark = 0), or has
 //       a clear margin around the plate (edge < 0.5)
 //
+// The icon is drawn by Icon/icon.swift (the canon, in Swift) and lands in
+// build/AppIcon.icns when build.sh runs; this checks that render, whichever
+// file is pointed at.
+//
 // Usage:
-//   node media/check-icns.mjs                   # checks assets/AppIcon.icns
+//   node media/check-icns.mjs                   # checks build/AppIcon.icns
 //   node media/check-icns.mjs path/to/icon.icns # checks that file
 
 import sharp from 'sharp'
@@ -128,7 +132,7 @@ function parseIcns(buf) {
 // ---------- main ----------
 
 const icnsPath = process.argv[2]
-  ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'AppIcon.icns')
+  ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'build', 'AppIcon.icns')
 
 if (!fs.existsSync(icnsPath)) {
   console.error(`check-icns: ${icnsPath} not found`)

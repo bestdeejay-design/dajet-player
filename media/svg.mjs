@@ -13,7 +13,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { squirclePathData, wavePathData } from './icon.mjs'
+import { squirclePathData, wavePathData } from './mark.mjs'
 
 const GROUND = '#15181C'
 const CREAM = '#F4F1E8'

@@ -14,7 +14,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { makeCanvas, Palette, fillRect, text, ink, squirclePath } from './kit.mjs'
 import { playerVertical, Metrics, surface, trafficLights } from './ui.mjs'
-import { squirclePathData, wavePathData } from './icon.mjs'
+import { squirclePathData, wavePathData } from './mark.mjs'
 
 const OUT = process.argv[2] ?? path.resolve(import.meta.dirname, '..', 'assets')
 

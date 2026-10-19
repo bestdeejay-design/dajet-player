@@ -1,8 +1,11 @@
 #!/bin/bash
-# Assembles a double-clickable .app around the SwiftPM binary.
+# Assembles a double-clickable .app around the SwiftPM binary — and, when
+# asked, the disk image people install it from and the ZIP the updater fetches.
 #
 #   ./build.sh                 release build, ad-hoc signed: runs here
 #   ./build.sh debug           a debug build, for a crash report you can read
+#   ./build.sh release dmg     + build/Dajet Player.dmg, build/Dajet Player.zip
+#                                and build/appcast.json
 #
 #   DAJET_ARCH=x86_64 ./build.sh
 #                              the same for Intel Macs, into build/intel/
@@ -11,14 +14,17 @@
 # the executable, and a macOS app bundle is just a folder with a plist and the
 # binary in the right place.
 #
-# This one stops at the app. The disk image, the ZIP and the appcast an updater
-# reads are the release wave's business. The icon is not: it arrived with the
-# design wave (assets/AppIcon.icns, drawn by media/icon.mjs) and goes into the
-# bundle here, so a build from a checkout wears the same mark as a release.
+# This one goes one step further than the browser at "app": the icon is drawn
+# from Icon/icon.swift (the brand canon's wave, no image asset in the repo),
+# and "dmg" packs the disk image and the ZIP and writes the appcast the feed
+# serves. There is no "ship" step yet: the player is ad-hoc signed, and
+# notarisation is the release wave's business when there is a Developer ID to
+# sign with.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 CONFIG="${1:-release}"
+STEP="${2:-app}"
 ARCH="${DAJET_ARCH:-$(uname -m)}"
 case "$ARCH" in
   arm64) OUT="build" ;;
@@ -49,18 +55,6 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$EXEC"
 
-# The icon, from the design wave: assets/AppIcon.icns, which media/ builds
-# from assets/icon.svg (the series' squircle and the player's wave). A macOS
-# app wears its icon out of its own Resources folder and the plist names it
-# below. A checkout without the asset still builds — it is a picture, not a
-# part of the program — and says so rather than shipping an app that silently
-# wears the plain icon.
-if [ -f assets/AppIcon.icns ]; then
-  cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-else
-  echo "no assets/AppIcon.icns: the app will wear the plain icon" >&2
-fi
-
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary, more than half of what it weighs, and
 # nothing the app reads while it runs. They are kept beside the build instead,
@@ -71,6 +65,39 @@ if [ "$CONFIG" = "release" ]; then
   dsymutil "$BINARY" -o "$APP.dSYM" 2>/dev/null || echo "no dSYM this time" >&2
   strip -x "$APP/Contents/MacOS/$EXEC"
 fi
+
+# The icon, drawn fresh each time — it is the brand canon's wave, in code
+# (Icon/icon.swift), not an asset to keep in step with anything. The generator
+# writes the .icns itself, PNG-only (see Icon/icon.swift), so no iconutil step.
+ICONSET="build/AppIcon.iconset"
+ICONDOC="build/AppIcon.icon"
+rm -rf "$ICONSET" "$ICONDOC"
+mkdir -p "$APP/Contents/Resources"
+swift Icon/icon.swift "$ICONSET" "$ICONDOC" > /dev/null
+cp "build/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$ICONSET" "build/AppIcon.icns"
+# macOS 26's Dark, Clear and Tinted Dock styles read the icon from an asset
+# catalog compiled from the Icon Composer document; without one the Dock
+# darkens the flat image and the mark can go muddy. actool comes with Xcode
+# 26 — with anything older, or only the command-line tools, the app keeps the
+# .icns alone. Only Assets.car is kept, not actool's own .icns: the one above
+# goes on being the disk image's icon and the fallback.
+ICONNAME=""
+ICONCAR="build/AppIcon.car"
+rm -rf "$ICONCAR"
+mkdir -p "$ICONCAR"
+# Full paths: actool hands the document to a helper that runs elsewhere, and
+# with "build/…" it finds nothing ("Icon export exited with status 255").
+if xcrun actool "$PWD/$ICONDOC" --compile "$PWD/$ICONCAR" --platform macosx \
+     --minimum-deployment-target "$MINIMUM" --app-icon AppIcon --optimization space \
+     --output-partial-info-plist "$PWD/$ICONCAR/partial.plist" > /dev/null 2>&1 \
+   && [ -f "$ICONCAR/Assets.car" ]; then
+  cp "$ICONCAR/Assets.car" "$APP/Contents/Resources/Assets.car"
+  ICONNAME="<key>CFBundleIconName</key><string>AppIcon</string>"
+else
+  echo "note: actool from Xcode 26 didn't compile the icon — no Dark or Tinted style this time" >&2
+fi
+rm -rf "$ICONCAR" "$ICONDOC"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -84,11 +111,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  $ICONNAME
   <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHumanReadableCopyright</key><string>© Dajet</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict>
 </plist>
 PLIST
@@ -106,6 +134,78 @@ else
   # A build that cannot sign at all is not a build, so nothing here swallows a
   # failure: set -e stops it, with codesign's own words above.
   codesign --force --deep --sign - "$APP"
+  [ "$STEP" != "app" ] && echo "no Developer ID certificate found — the DMG will only open on this Mac" >&2
 fi
 
 echo "built: $APP ($VERSION, $ARCH, build $BUILD)"
+[ "$STEP" = "app" ] && exit 0
+
+# The disk image: the app beside a shortcut to Applications, on a white window
+# with an arrow between them — drawn by Installer/background.swift and laid out
+# by Installer/dmg.py through dmgbuild, which writes the Finder's layout file
+# itself, so no Finder is scripted and no window opens mid-build. dmgbuild is
+# installed into .build the first time, and needs Python 3 and a network then;
+# without it the image is the plain one it always was.
+DMG="$OUT/$NAME.dmg"
+ART="build/installer"
+rm -rf "$ART" "$DMG"
+DMGBUILD=".build/dmgbuild/bin/dmgbuild"
+if [ ! -x "$DMGBUILD" ]; then
+  { python3 -m venv .build/dmgbuild && .build/dmgbuild/bin/pip install --quiet "dmgbuild==1.6.7"; } >/dev/null 2>&1 || true
+fi
+if [ -x "$DMGBUILD" ] \
+  && swift Installer/background.swift "$ART" >/dev/null \
+  && tiffutil -cathidpicheck "$ART/background.png" "$ART/background@2x.png" -out "$ART/background.tiff" >/dev/null 2>&1
+then
+  "$DMGBUILD" -s Installer/dmg.py \
+    -D app="$APP" -D background="$ART/background.tiff" -D icon="$APP/Contents/Resources/AppIcon.icns" \
+    "$NAME" "$DMG" >/dev/null
+else
+  echo "note: no dmgbuild — a plain disk image, without its window laid out" >&2
+  STAGE="build/dmg"
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
+  rm -rf "$STAGE"
+fi
+rm -rf "$ART"
+[ -n "$IDENTITY" ] && codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+echo "packed: $DMG"
+
+# The ZIP is what the updater fetches, and its hash is what the updater checks
+# before opening it.
+ZIP="$OUT/$NAME.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
+echo "packed: $ZIP"
+
+# What the updater reads. The first paragraph of NOTES.md, with the two
+# characters JSON minds escaped, is the line under the version in Settings.
+# The stable URL of the latest release's assets, so the feed names where the
+# updater and people fetch from. DAJET_DOWNLOAD_URL overrides it for a test
+# run or a feed with no GitHub release behind it.
+BASE="${DAJET_DOWNLOAD_URL:-https://github.com/bestdeejay-design/dajet-player/releases/latest/download}"
+NOTES=""
+if [ -f NOTES.md ]; then
+  NOTES="$(awk 'NF { printf "%s%s", (n++ ? " " : ""), $0; next } n { exit }' NOTES.md \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+fi
+DMGSHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+cat > "$OUT/appcast.json" <<JSON
+{
+  "version": "$VERSION",
+  "build": $BUILD,
+  "url": "$BASE/$NAME.zip",
+  "dmg": "$BASE/$NAME.dmg",
+  "sha256": "$SHA",
+  "dmgSha256": "$DMGSHA",
+  "notes": "$NOTES",
+  "minimumSystemVersion": "$MINIMUM"
+}
+JSON
+echo "wrote: $OUT/appcast.json ($VERSION, $ARCH, build $BUILD)"
+
+echo "packed: $DMG, $ZIP and $OUT/appcast.json"
