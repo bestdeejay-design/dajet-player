@@ -4,18 +4,21 @@
 > Репозиторий: **`bestdeejay-design/dajet-player`** — и только он.
 > Источник: аудит #18 (SZ, read-only), находки
 > **AUD-01, AUD-04, AUD-05, AUD-06, AUD-07, AUD-11, AUD-13, AUD-14**.
-> База: свежий `main` — **`59c8d634`** (merge PR #19, remember-folder; код
+> База: свежий `main` — **`9b340114`** (коммит брифа SZ-01; код
 > `Sources/`/`Tests/` на этом коммите).
-> Ветка: **`arena/sz01-docs`** (от `main`; перед стартом — `git pull` и
-> сообщи координатору свежий HEAD; если `main` уехал — ребейсь).
+> Ветка: **любая в префиксе `arena/`** — Arena создаёт её сама от
+> свежего `main` (как делала для #13: `arena/<session-id>-…`). SZ не
+> назначает имя; единственное граничное условие — ветка в `arena/` и
+> базируется на актуальном `main`. Перед стартом — `git pull`, сообщи
+> координатору свежий HEAD; если `main` уехал — ребейсь.
 > Форма: один PR, только документы. Прав на issue у ARENA есть, на merge —
 > нет (merge по ревью SZ + слову владельца).
 
 ## Репо и база
 
 - репозиторий: `bestdeejay-design/dajet-player`
-- старт: свежий `main`, база-хэш на момент постановки — `59c8d6341b5af9fa5886cf0cb55c76125c99c953`
-- твоя ветка: `arena/sz01-docs` (от `main`)
+- старт: свежий `main`, база-хэш на момент постановки — `9b340114cfa007a5284cd0650c90a0e1c02d1851`
+- твоя ветка: любая в префиксе `arena/` (создаёшь сама от свежего `main`; имя — на твой session-id, как для #13)
 - тип волны: **только документы** — `README.md`, `README.ru.md`, `ROADMAP.md`.
   Ни одного символа в `Sources/`, `Tests/`, `build.sh`, `.github/`, `Icon/`,
   `Installer/`, `media/`, `Package.swift`, `VERSION`, `NOTES.md`,
@@ -156,8 +159,8 @@ with the drawer it moved». `Motion` содержит только `settle` и `
 ## Definition of Done
 
 - Все 8 находок закрыты в `README.md`/`README.ru.md`/`ROADMAP.md`; ни одного
-  изменения вне этих трёх файлов (`git diff --stat main..arena/sz01-docs` —
-  ровно три строки).
+  изменения вне этих трёх файлов (`git diff --stat main..HEAD` — ровно
+  три строки).
 - Версия в шапках README/ROADMAP = `0.1.0`; «v0.4.0» нигде не встречается
   (`rg -n 'v0\.4\.0' README.md README.ru.md ROADMAP.md` — пусто).
 - Список фреймворков в README/README.ru включает AppKit и MediaPlayer;
@@ -176,13 +179,13 @@ with the drawer it moved». `Motion` содержит только `settle` и `
 
 ## Форма сдачи
 
-- ветка `arena/sz01-docs`, PR
+- ветка в префиксе `arena/` (имя — на твой session-id, как для #13), PR
   «docs: align README/ROADMAP/VERSION with code (AUD-01..AUD-14 docs subset)»;
 - тело PR: список закрытых находок `AUD-NN` со ссылками на `файл:строка`
   до/после;
 - в комментарии PR — verbatim-вывод:
   `git rev-parse HEAD` (база),
-  `git diff --stat main..arena/sz01-docs`,
+  `git diff --stat main..HEAD`,
   `rg -n 'v0\.4\.0' README.md README.ru.md ROADMAP.md`,
   `rg -n 'Motion\.glide' ROADMAP.md`,
   `swift test` (16/16);
@@ -195,7 +198,7 @@ with the drawer it moved». `Motion` содержит только `settle` и `
   принимается;
 - prose пишет ARENA — SZ даёт направление, не готовые строки; ревью SZ
   проверяет сходство с кодом, не стилистические предпочтения;
-- `git status` чистый на выходе (только коммит в ветку `arena/sz01-docs`);
+- `git status` чистый на выходе (только коммит в твою `arena/`-ветку);
 - существующие контракты и принятые волны не переоценивать;
 - если что-то в брифе не сходится с кодом по указанным строкам —
   остановиться и спросить, не додумывать.
