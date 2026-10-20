@@ -69,7 +69,13 @@ struct SideMenu: View {
         .padding(.top, Metrics.gap)
         .background(reduceTransparency ? Palette.ground : Palette.side)
         // A folder becoming what is playing — dropped, chosen from the panel,
-        // or clicked in this very menu — is the one that should be open.
+        // restored on launch, or clicked in this very menu — is the one that
+        // should be open.
+        .onAppear {
+            guard showing == nil, let source = engine.source,
+                  let match = playlists.list.first(where: { $0.isFolder(source) }) else { return }
+            showing = match.id
+        }
         .onChange(of: engine.source) { _, source in
             guard let source,
                   let match = playlists.list.first(where: { $0.isFolder(source) }) else { return }

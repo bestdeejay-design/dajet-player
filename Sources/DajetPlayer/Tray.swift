@@ -44,6 +44,13 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// not.
     let playlists = Playlists()
 
+    override init() {
+        super.init()
+        if let source = engine.source {
+            playlists.add(source)
+        }
+    }
+
     /// SwiftUI's own way of asking for the window back, handed over by the
     /// window while it is there. The tray looks for a window first and asks
     /// this only when there is none to find, which is what a closed `Window`
@@ -157,6 +164,7 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let accessibilityObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
         }
+        engine.stopAccessingFolder()
     }
 
     /// Closing the window is not closing the player, and it is not closing the
