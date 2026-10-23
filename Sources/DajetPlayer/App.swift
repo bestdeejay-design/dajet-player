@@ -203,7 +203,7 @@ struct PlayerView: View {
         .overlay {
             if taking { dropHint }
         }
-        .animation(Motion.quick, value: taking)
+        .animation(Motion.quickHonoured, value: taking)
         .toolbar {
             // The side menu's toggle is not here: the split view brings its own
             // — at the leading end, beside the traffic lights, where a toggle
@@ -426,15 +426,26 @@ struct PlayerView: View {
 
     /// Three glyphs, 26 pt each with 12 pt gaps. Modes remain in the volume row
     /// where there is room, and are always accessible from the tray.
+    ///
+    /// The door is the package's own now, and it has no state for a door that
+    /// cannot be opened — so the window says that state around it: held, and
+    /// pale. A row that loses its buttons when there is nothing to press is a
+    /// row that moves about while it is being read.
     private var templateHands: some View {
         HStack(spacing: 12) {
-            Door(icon: "backward.fill", help: "Previous — restart after three seconds",
-                 enabled: engine.count > 0, act: { engine.previous() })
-            Door(icon: engine.state == .playing ? "pause.fill" : "play.fill",
+            Door("backward.fill",
+                 help: "Previous — restart after three seconds",
+                 act: { engine.previous() })
+                .doorHeld(engine.count == 0)
+            Door(engine.state == .playing ? "pause.fill" : "play.fill",
+                 on: true,
                  help: engine.state == .playing ? "Pause (Space)" : "Play (Space)",
-                 on: true, enabled: engine.count > 0, act: { engine.toggle() })
-            Door(icon: "forward.fill", help: "Next track",
-                 enabled: engine.count > 0, act: { engine.next() })
+                 act: { engine.toggle() })
+                .doorHeld(engine.count == 0)
+            Door("forward.fill",
+                 help: "Next track",
+                 act: { engine.next() })
+                .doorHeld(engine.count == 0)
         }
         .frame(height: 26)
     }
@@ -446,14 +457,15 @@ struct PlayerView: View {
     /// card beside its transport, the tall card under its own.
     private var modesAndVolume: some View {
         HStack(spacing: 8) {
-            Door(icon: "shuffle", help: "Shuffle", on: engine.shuffle,
-                 size: 22, glyph: 11, act: { engine.toggleShuffle() })
-            Door(icon: engine.repeatMode == .one ? "repeat.1" : "repeat",
-                 help: repeatHelp, on: engine.repeatMode != .off,
-                 size: 22, glyph: 11, act: { engine.cycleRepeat() })
-            Door(icon: engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                 help: engine.muted ? "Unmute" : "Mute", on: engine.muted,
-                 size: 22, glyph: 11, act: { engine.toggleMute() })
+            Door("shuffle", on: engine.shuffle, help: "Shuffle",
+                 act: { engine.toggleShuffle() })
+            Door(engine.repeatMode == .one ? "repeat.1" : "repeat",
+                 on: engine.repeatMode != .off, help: repeatHelp,
+                 act: { engine.cycleRepeat() })
+            Door(engine.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                 on: engine.muted,
+                 help: engine.muted ? "Unmute" : "Mute",
+                 act: { engine.toggleMute() })
             Slider(value: volume, in: 0...1)
                 .frame(width: 44)
                 .controlSize(.mini)
@@ -552,7 +564,7 @@ struct PlayerView: View {
             .onKeyPress(.leftArrow) { step(-5) }
             .onKeyPress(.rightArrow) { step(5) }
             .onHover { over in
-                withAnimation(Motion.quick) { hoveringBar = over }
+                withAnimation(Motion.quickHonoured) { hoveringBar = over }
             }
             Text(left)
                 .frame(width: tight ? 38 : 46, alignment: .leading)
@@ -592,7 +604,7 @@ struct PlayerView: View {
     private var dropHint: some View {
         ZStack {
             Palette.accent.opacity(0.06)
-            RoundedRectangle(cornerRadius: Metrics.panel + 3, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.item + 3, style: .continuous)
                 .strokeBorder(Palette.accent.opacity(0.55), lineWidth: 2)
                 .padding(7)
             Text("Let go to play.")
@@ -601,7 +613,7 @@ struct PlayerView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: Metrics.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.item, style: .continuous)
                         .fill(Palette.ground.opacity(0.82))
                 )
         }
@@ -854,9 +866,9 @@ private struct Cover: View {
                 }
             }
             .frame(width: side, height: side)
-            .clipShape(RoundedRectangle(cornerRadius: Metrics.panel + 2, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.item + 2, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: Metrics.panel + 2, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.item + 2, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.30), radius: 22, y: 12)
@@ -872,6 +884,16 @@ private struct Cover: View {
 /// (the `onChange` of `barFocused`) and the monitor reads it instead.
 final class FocusBox: @unchecked Sendable {
     var focused = false
+}
+
+/// The state the package's door does not carry itself: a door that cannot be
+/// opened still stands where it is, greyed — held, and pale, and taking no
+/// clicks — so that a row with nothing to press keeps its shape.
+private extension View {
+    func doorHeld(_ held: Bool) -> some View {
+        disabled(held)
+            .opacity(held ? 0.35 : 1)
+    }
 }
 
 /// What the providers of one drop turned up, in the order they were dropped.

@@ -132,7 +132,7 @@ struct SideMenu: View {
     /// The arrow: the playlist's list, open or closed. Nothing is played and
     /// nothing stops playing.
     private func toggle(_ id: Playlist.ID) {
-        withAnimation(Motion.settle) {
+        withAnimation(Motion.settleHonoured) {
             showing = showing == id ? nil : id
         }
     }
@@ -141,7 +141,7 @@ struct SideMenu: View {
     /// that is already playing — opened, which starts it from its first track.
     private func open(_ playlist: Playlist) {
         guard playlist.there else { return }
-        withAnimation(Motion.settle) { showing = playlist.id }
+        withAnimation(Motion.settleHonoured) { showing = playlist.id }
         // Already this folder's queue, with something in it: the click is a
         // hand asking to see where the player is, not asking it to start over.
         let already = engine.source.map { playlist.isFolder($0) } ?? false
@@ -246,7 +246,7 @@ private struct PlaylistRow: View {
         }
         .padding(.leading, 4)
         .background(
-            RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                 .fill(hovering ? Palette.hover : Color.clear)
         )
         .contentShape(Rectangle())
@@ -260,7 +260,7 @@ private struct PlaylistRow: View {
             Divider()
             Button("Remove from Playlists") { remove() }
         }
-        .animation(Motion.quick, value: hovering)
+        .animation(Motion.quickHonoured, value: hovering)
     }
 
     private var nameColour: Color {
@@ -348,7 +348,7 @@ private struct TrackRow: View {
             .padding(.trailing, 8)
             .frame(height: Metrics.row)
             .background(
-                RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                     .fill(playing ? Palette.wash : (hovering ? Palette.hover : Color.clear))
             )
             .contentShape(Rectangle())
@@ -358,7 +358,7 @@ private struct TrackRow: View {
         .help(url.lastPathComponent)
         .accessibilityLabel(url.deletingPathExtension().lastPathComponent)
         .accessibilityAddTraits(playing ? .isSelected : [])
-        .animation(Motion.quick, value: hovering)
-        .animation(Motion.quick, value: playing)
+        .animation(Motion.quickHonoured, value: hovering)
+        .animation(Motion.quickHonoured, value: playing)
     }
 }
