@@ -145,23 +145,14 @@ extension Metrics {
 
 // MARK: - the looks
 
-/// Which of the two looks the window wears, and whether the Mac decides.
-///
-/// The browser has three (Settings › Appearance) and so does this: a player
-/// that can only be looked at one way is a player that has an opinion about
-/// your desktop. The choice is remembered between runs, and the window follows
-/// it at once.
-enum Theme: String, CaseIterable, Identifiable {
-    case light
-    case dark
-    case system
-
-    var id: String { rawValue }
-
-    /// The key the choice lives under, in the app's own little corner of the
-    /// standard defaults. One string, on this Mac, for this app.
-    static let key = "look"
-
+/// The player's own dressing on the line's one `Look`: the words and glyphs
+/// its switch and tray wear. The axis itself — light, dark, or the Mac's —
+/// lives in the package, remembered under the one key the whole line shares;
+/// the window's surface follows the appearance the look puts on the app
+/// (light is the glass, dark the matte), and nothing here knows about window
+/// templates: a look change is a coat, not a re-layout.
+extension Look {
+    /// What the tray and the switch say for each look.
     var title: String {
         switch self {
         case .light: return "Light — glass"
@@ -170,8 +161,7 @@ enum Theme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The glyph the switch in the window's corner wears for this look: what
-    /// is on, said in one shape.
+    /// The glyph the switch in the window's corner wears for this look.
     var icon: String {
         switch self {
         case .light: return "sun.max"
@@ -180,51 +170,12 @@ enum Theme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The look last chosen, or the Mac's own when nothing has been chosen —
-    /// which is where a fresh copy of the app starts, as the browser does.
-    static var remembered: Theme {
-        Theme(rawValue: UserDefaults.standard.string(forKey: Theme.key) ?? "") ?? .system
-    }
-
-    /// What the app is told to be. Nothing at all for `system`: the app then
-    /// follows the Mac, and changes with it.
-    var appearance: NSAppearance? {
-        switch self {
-        case .light: return NSAppearance(named: .aqua)
-        case .dark: return NSAppearance(named: .darkAqua)
-        case .system: return nil
-        }
-    }
-
     /// The other one, for the button that walks the three of them round.
-    var next: Theme {
+    var next: Look {
         switch self {
         case .light: return .dark
         case .dark: return .system
         case .system: return .light
-        }
-    }
-
-    /// Set on the app rather than on the window, so every panel, alert and
-    /// sheet — the folder panel included — agrees with the window it was
-    /// opened from.
-    ///
-    /// Never from inside whatever is happening when it is asked for: the
-    /// switch is pressed from within an animation, and re-skinning every
-    /// window in the middle of one is how a window ends up with a layer that
-    /// takes clicks and shows nothing. The browser learned that the hard way
-    /// (its Design.swift says so, and this is its own `Look.apply()`, to the
-    /// line): the next turn of the run loop is soon enough here too.
-    ///
-    /// Deliberately not main-actor-isolated, so that it can be asked for from
-    /// anywhere — a view's `onAppear`, the app's own `init` — and does its own
-    /// hopping. It touches nothing but the app's appearance, and that on the
-    /// main queue.
-    func apply() {
-        let wanted = appearance
-        DispatchQueue.main.async {
-            guard NSApp.appearance !== wanted, NSApp.appearance?.name != wanted?.name else { return }
-            NSApp.appearance = wanted
         }
     }
 }

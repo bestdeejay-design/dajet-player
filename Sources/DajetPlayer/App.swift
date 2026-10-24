@@ -62,7 +62,7 @@ struct DajetPlayerApp: App {
         // is drawn: opening in the Mac's appearance and changing a moment
         // later is a window that looks like it fell over.
         AppearancePreferences.prepare()
-        let remembered = Theme.remembered
+        let remembered = Look.current
         DispatchQueue.main.async { remembered.apply() }
     }
 
@@ -122,7 +122,7 @@ struct PlayerView: View {
     @ObservedObject var presentation: Presentation
 
     /// The look that is on, kept between runs under the one key.
-    @AppStorage(Theme.key) private var lookName = Theme.system.rawValue
+    @AppStorage(Look.key) private var lookName = Look.system.rawValue
     /// A number that goes up when the menu's lists are out of date — it has
     /// just come out, or a folder has just been added.
     @State private var fresh = 0
@@ -237,7 +237,7 @@ struct PlayerView: View {
         .onAppear {
             // Again, in case the app was not there yet when it was asked for
             // the first time (see DajetPlayerApp's init).
-            Theme.remembered.apply()
+            Look.current.apply()
             watchKeys()
             // The reading of the files the menu is about to show, if any, is
             // as old as the last time it was out.
@@ -259,7 +259,6 @@ struct PlayerView: View {
             if isOpen { fresh += 1 }
         }
         .onChange(of: lookName) { _, _ in
-            presentation.themeChanged(look)
             look.apply()
         }
         .onChange(of: barFocused) { _, focused in
@@ -323,7 +322,7 @@ struct PlayerView: View {
         )
     }
 
-    private var look: Theme { Theme(rawValue: lookName) ?? .system }
+    private var look: Look { Look(rawValue: lookName) ?? .system }
 
     // MARK: - the player
 

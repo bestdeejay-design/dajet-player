@@ -8,26 +8,27 @@ final class PresentationTests: XCTestCase {
         return (UserDefaults(suiteName: name)!, name)
     }
 
-    func testCleanInstallIsAeroVerticalAndMigrationIsIdempotent() {
+    func testCleanInstallIsLightVerticalAndMigrationIsIdempotent() {
         let (store, name) = defaults()
         defer { store.removePersistentDomain(forName: name) }
         AppearancePreferences.prepare(store)
-        XCTAssertEqual(store.string(forKey: Theme.key), "light")
-        XCTAssertEqual(store.string(forKey: AppearancePreferences.preset), "aero")
+        XCTAssertEqual(store.string(forKey: Look.key), "light")
+        XCTAssertNil(store.object(forKey: AppearancePreferences.preset))
         XCTAssertEqual(store.string(forKey: AppearancePreferences.template), "vertical")
         store.set("horizontal", forKey: AppearancePreferences.template)
         AppearancePreferences.prepare(store)
         XCTAssertEqual(store.string(forKey: AppearancePreferences.template), "horizontal")
+        XCTAssertEqual(store.string(forKey: Look.key), "light")
     }
 
     func testLegacyLookAndFrameAreUntouched() {
         let (store, name) = defaults()
         defer { store.removePersistentDomain(forName: name) }
-        store.set("dark", forKey: Theme.key)
+        store.set("dark", forKey: Look.key)
         store.set("76 74 620 458", forKey: "NSWindow Frame player")
         store.set(249.02, forKey: "sideWidth")
         AppearancePreferences.prepare(store)
-        XCTAssertEqual(store.string(forKey: Theme.key), "dark")
+        XCTAssertEqual(store.string(forKey: Look.key), "dark")
         XCTAssertEqual(store.string(forKey: "NSWindow Frame player"), "76 74 620 458")
         XCTAssertEqual(store.double(forKey: "sideWidth"), 249.02)
         XCTAssertEqual(store.string(forKey: AppearancePreferences.template), "custom")
@@ -39,21 +40,38 @@ final class PresentationTests: XCTestCase {
         defer { store.removePersistentDomain(forName: name) }
         store.set(0.5, forKey: "volume")
         AppearancePreferences.prepare(store)
-        XCTAssertNil(store.object(forKey: Theme.key))
+        XCTAssertNil(store.object(forKey: Look.key))
         XCTAssertNil(store.object(forKey: AppearancePreferences.preset))
         XCTAssertEqual(store.string(forKey: AppearancePreferences.template), "custom")
     }
 
-    func testAppearanceResetMatrix() {
-        for wanted in AppearancePreset.allCases {
-            XCTAssertTrue(wanted.resetsTemplate(current: nil, template: .horizontal))
-            for current in AppearancePreset.allCases {
-                for template in WindowTemplate.allCases {
-                    XCTAssertEqual(wanted.resetsTemplate(current: current, template: template),
-                                   current != wanted || template == .custom)
-                }
-            }
+    func testLegacyPresetBecomesLookAndKeyLeaves() {
+        let cases = ["aero": "light", "obsidian": "dark", "system": "system"]
+        for (preset, look) in cases {
+            let (store, name) = defaults()
+            defer { store.removePersistentDomain(forName: name) }
+            store.set(preset, forKey: AppearancePreferences.preset)
+            AppearancePreferences.prepare(store)
+            XCTAssertEqual(store.string(forKey: Look.key), look)
+            XCTAssertNil(store.object(forKey: AppearancePreferences.preset), "ключ пресета удалён")
         }
+        // Явный look не перезаписывается пресетом.
+        let (store, name) = defaults()
+        defer { store.removePersistentDomain(forName: name) }
+        store.set("obsidian", forKey: AppearancePreferences.preset)
+        store.set("light", forKey: Look.key)
+        AppearancePreferences.prepare(store)
+        XCTAssertEqual(store.string(forKey: Look.key), "light")
+    }
+
+    func testThemeChangeKeepsTemplate() {
+        let (store, name) = defaults()
+        defer { store.removePersistentDomain(forName: name) }
+        AppearancePreferences.prepare(store)
+        store.set("horizontal", forKey: AppearancePreferences.template)
+        store.set("dark", forKey: Look.key)
+        XCTAssertEqual(store.string(forKey: AppearancePreferences.template), "horizontal",
+                       "Смена темы — не сменa шаблона")
     }
 
     func testTemplatesHaveOnlyOwnersFrameSizes() {
@@ -76,19 +94,15 @@ final class PresentationTests: XCTestCase {
             model.sideOpen = true
             model.select(WindowTemplate.horizontal)
             XCTAssertFalse(model.sideOpen)
-            model.select(AppearancePreset.aero)
-            XCTAssertEqual(model.template, .horizontal, "Same appearance preserves chosen template")
-            model.select(AppearancePreset.obsidian)
-            XCTAssertEqual(model.template, .vertical)
-            XCTAssertEqual(store.string(forKey: Theme.key), "dark")
+            store.set("light", forKey: Look.key)
+            XCTAssertEqual(model.template, .horizontal, "A look change preserves the chosen template")
+            store.set("dark", forKey: Look.key)
+            XCTAssertEqual(model.template, .horizontal)
             model.sideWidth = 220
             let restored = Presentation(defaults: store)
-            XCTAssertEqual(restored.template, .vertical)
-            XCTAssertEqual(restored.preset, .obsidian)
+            XCTAssertEqual(restored.template, .horizontal)
+            XCTAssertEqual(store.string(forKey: Look.key), "dark")
             XCTAssertEqual(restored.sideWidth, 220)
-            restored.themeChanged(.light)
-            XCTAssertNil(restored.preset)
-            XCTAssertNil(store.object(forKey: AppearancePreferences.preset))
         }
     }
 
@@ -127,8 +141,8 @@ final class PresentationTests: XCTestCase {
             defer { reopened.close() }
             restored.attach(reopened)
             XCTAssertEqual(reopened.frame, window.frame)
-            model.select(AppearancePreset.aero)
-            XCTAssertEqual(model.template, .vertical, "Same appearance restores its template from Custom")
+            store.set("light", forKey: Look.key)
+            XCTAssertEqual(model.template, .custom, "A look change leaves Custom alone")
         }
     }
 }

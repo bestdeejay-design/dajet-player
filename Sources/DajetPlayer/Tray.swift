@@ -272,11 +272,11 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
             help: "Show or hide the column — ⌥⌘S", act: #selector(toggleSide)
         ))
         menu.addItem(submenu("Settings", icon: "slider.horizontal.3") { settings in
-            settings.addItem(self.submenu("Appearance", icon: Theme.remembered.icon) { appearance in
-                for preset in AppearancePreset.allCases {
-                    let one = self.act(#selector(self.appearance(_:)), preset.title)
-                    one.representedObject = preset.rawValue
-                    one.state = preset == self.presentation.preset ? .on : .off
+            settings.addItem(self.submenu("Appearance", icon: Look.current.icon) { appearance in
+                for look in Look.allCases {
+                    let one = self.act(#selector(self.appearance(_:)), look.title)
+                    one.representedObject = look.rawValue
+                    one.state = look == Look.current ? .on : .off
                     appearance.addItem(one)
                 }
             })
@@ -472,10 +472,12 @@ final class Tray: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// One of the three looks, chosen from the tray and remembered under the
     /// one key the window reads — the same choice, from either side of it.
+    /// A look is a coat, not a re-layout: the window keeps its template.
     @objc private func appearance(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String,
-              let wanted = AppearancePreset(rawValue: name) else { return }
-        presentation.select(wanted)
+              let wanted = Look(rawValue: name) else { return }
+        Look.remember(wanted)
+        wanted.apply()
     }
 
     @objc private func windowSize(_ sender: NSMenuItem) {
