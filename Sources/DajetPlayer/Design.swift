@@ -69,13 +69,12 @@ extension Palette {
     }
 
     /// The AppKit side of the player's own pairs, for the corners of the app
-    /// that want an `NSColor` and keep it: the window's own background. The
-    /// values are the package's `Palette.ground` said as an NSColor — white in
-    /// the light theme, the shared near-black in the dark — so that the window
-    /// behind its material and the matte drawn over it are the same colour.
+    /// that want an `NSColor` and keep it. The window's own background is the
+    /// package's `Palette.NS.ground` — white in the light theme, the shared
+    /// near-black in the dark — so that the window behind its material and the
+    /// matte drawn over it are the same colour without a second copy of the
+    /// numbers to keep in step.
     enum Pair {
-        static let ground = tint(light: (1.0, 1.0, 1.0), dark: (0.110, 0.110, 0.110))
-
         /// The pair looked up by the appearance the window is in. One
         /// provider, resolved wherever the colour is drawn — which is what
         /// makes a single name right in both themes without anything having to
@@ -139,26 +138,10 @@ extension Metrics {
 
 // MARK: - the player's own motion
 
-/// The package's two tempos, handed back the way this player hands them out:
-/// as optionals that are nothing at all when the Mac has been asked for less
-/// movement. The package leaves the courtesy to the app — its own recipe is
-/// exactly this — and the player keeps it in one place rather than at every
-/// animation it asks for. The tray reads `reduced` directly, for the dance.
-extension Motion {
-    /// Whether the interface should move at all, following the Mac's own
-    /// accessibility setting.
-    static var reduced: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
-
-    static var settleHonoured: Animation? {
-        reduced ? nil : settle
-    }
-
-    static var quickHonoured: Animation? {
-        reduced ? nil : quick
-    }
-}
+// The package's tempos are already `Animation?` that turn into nothing at all
+// when the Mac has been asked for less movement — `Motion.reduced` is public
+// there, which is what the tray's dance reads. No wrapper of the player's own:
+// the app asks for `Motion.settle` and `Motion.quick` directly.
 
 // MARK: - the looks
 

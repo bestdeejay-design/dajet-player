@@ -218,7 +218,7 @@ struct WindowDress: NSViewRepresentable {
                 // desktop behind it is nobody's business. The colour resolves
                 // itself against the appearance the window is in.
                 window.isOpaque = true
-                window.backgroundColor = Palette.Pair.ground
+                window.backgroundColor = Palette.NS.ground
             }
         }
     }

@@ -203,7 +203,7 @@ struct PlayerView: View {
         .overlay {
             if taking { dropHint }
         }
-        .animation(Motion.quickHonoured, value: taking)
+        .animation(Motion.quick, value: taking)
         .toolbar {
             // The side menu's toggle is not here: the split view brings its own
             // — at the leading end, beside the traffic lights, where a toggle
@@ -564,7 +564,7 @@ struct PlayerView: View {
             .onKeyPress(.leftArrow) { step(-5) }
             .onKeyPress(.rightArrow) { step(5) }
             .onHover { over in
-                withAnimation(Motion.quickHonoured) { hoveringBar = over }
+                withAnimation(Motion.quick) { hoveringBar = over }
             }
             Text(left)
                 .frame(width: tight ? 38 : 46, alignment: .leading)

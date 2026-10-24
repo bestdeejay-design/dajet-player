@@ -85,3 +85,10 @@ MIT — [LICENSE](LICENSE). Development: [bestdeejay-design/dajet-player](https:
 <picture><img src="assets/footer.svg" alt=""></picture>
 
 *Dajet Player is the second app of the [Dajet](https://github.com/bestdeejay-design/dajet-browser) series: the browser came first, the player follows the same quiet rules.*
+
+
+## Building
+
+The design layer lives in the **[dajet-ui](https://github.com/bestdeejay-design/dajet-ui)**
+package, wired as a local path dependency (`../ui`). Clone both repositories
+side by side (`apps/dajet/player` + `apps/dajet/ui`) — a lone clone won't build.
