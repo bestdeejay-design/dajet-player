@@ -25,6 +25,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The app depends on the design-system package by local path: Package.swift
+      # asks for `../ui`, and SwiftPM never fetches a path dependency — the
+      # package has to be on disk next to the app. The checkout lands it inside
+      # the workspace, and the move puts it exactly where the manifest looks,
+      # so the runner sees the same layout a developer sees on a desk.
+      #
+      # The token: a public dajet-ui is read with the runner's own token, a
+      # private one needs a PAT in the repository secrets (UI_REPO_TOKEN).
+      - name: Fetch the DajetUI package
+        uses: actions/checkout@v4
+        with:
+          repository: bestdeejay-design/dajet-ui
+          path: ui
+          token: ${{ secrets.UI_REPO_TOKEN || github.token }}
+
+      - name: Put DajetUI where Package.swift expects it
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/../ui"
+          mv "$GITHUB_WORKSPACE/ui" "$GITHUB_WORKSPACE/../ui"
+          ls -l "$GITHUB_WORKSPACE/../ui/Package.swift"
+
       - name: Toolchain
         run: |
           sw_vers
