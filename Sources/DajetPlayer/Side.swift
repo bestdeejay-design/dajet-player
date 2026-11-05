@@ -40,7 +40,6 @@ struct SideMenu: View {
     /// has just come out, or a folder has just been added — so that the tracks
     /// shown are the folder's tracks now and not the ones from an hour ago.
     var refresh: Int
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// The playlist whose tracks are shown. One at a time, which is what a
     /// column this narrow can hold honestly.
     @State private var showing: Playlist.ID?
@@ -57,17 +56,21 @@ struct SideMenu: View {
         }
         // The width is the split's decision, between the range App.swift hands
         // the column; what the column still owns is what it draws. And what it
-        // is made of is what it always was: the window's own surface and one
-        // almost-opaque tile (Palette.side: a step deeper than the glass in
-        // the light theme, a step lighter than the matte in the dark).
-        // Deliberately *not* a second pane of glass — a material laid under a
-        // material is the one thing the platform's own guidance says never to
-        // do — and deliberately without the shadow and the hairline it wore as
-        // a drawer: the divider the split draws is the line between the two
-        // panes now.
+        // is made of is the platform's own sidebar material, which is what this
+        // place is for: `.sidebar` is AppKit's name for exactly this pane, and
+        // `behindWindow` makes it sample the desk rather than the window's own
+        // glass — so the two panes stand beside each other and neither is a
+        // material laid under a material (P5 spec, B.3). AppKit builds that
+        // material itself only for a source-list table view; this column is a
+        // `ScrollView` and a `LazyVStack`, so it is put there by hand.
+        //
+        // What is gone with `Palette.side` is the column's own tile and the
+        // second reading of Reduce Transparency that went with it: the
+        // material thickens itself when the Mac asks it to, and the window's
+        // opacity is the window's business (Window.swift, `WindowDress`).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, Metrics.gap)
-        .background(reduceTransparency ? Palette.ground : Palette.side)
+        .background(VisualEffect(material: .sidebar, blending: .behindWindow))
         // A folder becoming what is playing — dropped, chosen from the panel,
         // restored on launch, or clicked in this very menu — is the one that
         // should be open.

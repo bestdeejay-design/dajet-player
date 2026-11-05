@@ -14,15 +14,15 @@ import SwiftUI
 // What remains in this file is the player's own, because no token of the
 // package says it:
 //
-//   · the two surfaces a window is made of that have no place in a token
-//     set — the light theme's glass (its washes, kept under `Palette.Glass`)
-//     and the dark theme's matte (Window.swift, on the package's ground);
-//   · `Palette.pane` and `Palette.side`, the two translucent steps away from
-//     the ground that a cover's empty square and the side menu stand on;
+//   · `Palette.pane`, the translucent step away from the ground that a cover's
+//     empty square stands on. (The window's surfaces are not colours at all
+//     any more: the material gives the light theme its glass and the dark
+//     theme its ground washed over the same material — Window.swift. The
+//     `Palette.Glass` washes, the `Palette.side` tile and `Transparency` went
+//     with them.)
 //   · the few numbers that are the player's alone (`Metrics`, extended);
-//   · the Reduce Motion courtesy the springs are handed back through;
-//   · the three looks the window wears (`Theme`), `Transparency`, and the
-//     wave that is the player's mark.
+//   · the three looks the window wears (`Theme`) and the wave that is the
+//     player's mark.
 
 /// The series' design language — palette, metrics, radiuses, springs, the
 /// door — opened to every file of the target from this one place, so that
@@ -37,43 +37,13 @@ extension Palette {
     /// not a shape floating in the window.
     static let pane = Color(nsColor: Pair.veil(light: (1, 1, 1, 0.34), dark: (1, 1, 1, 0.045)))
 
-    /// The side menu's own step away from whatever the window is: a little
-    /// deeper than the glass in the light theme, a little lighter than the
-    /// matte in the dark — one wash, and not a second material (see Side.swift).
-    /// The step it takes is off the ground the way it always was; only the
-    /// ground itself is the package's now.
-    static let side = Color(nsColor: Pair.veil(light: (0.96, 0.97, 0.98, 0.92), dark: (0.075, 0.080, 0.090, 0.94)))
-
-    /// The light surface's own glass: the wash that lifts a blurred pane off
-    /// the desktop, the sheen across its top, and the shadow it casts at its
-    /// foot. Transparent values, because they lie *over* the material and are
-    /// not colours of their own (see Window.swift).
-    ///
-    /// All three are lighter than the first version of this glass wore them
-    /// (P-10 — the owner's word on that one was "too murky"): the material
-    /// under them is a window onto the desk now rather than a wall of frost,
-    /// and a wash heavy enough to be seen over frost is a curtain over a
-    /// window. What they are for has not changed — a pane with no lift and no
-    /// sheen is a rectangle of somebody else's wallpaper — only how much of
-    /// each it takes to say it.
-    enum Glass {
-        /// The lift: enough white for the pane to read as a pane, little
-        /// enough that the desktop behind it is still what is seen through it.
-        static let lift = Color.white.opacity(0.025)
-        /// The sheen: the top edge catching the light, which is the one thing
-        /// that says which way is up on a surface with no edges of its own.
-        static let sheen = Color.white.opacity(0.07)
-        /// The foot: the opposite, where the pane meets the window's lower
-        /// edge and everything behind it is floor.
-        static let foot = Color.black.opacity(0.022)
-    }
-
     /// The AppKit side of the player's own pairs, for the corners of the app
-    /// that want an `NSColor` and keep it. The window's own background is the
-    /// package's `Palette.NS.ground` — white in the light theme, the shared
-    /// near-black in the dark — so that the window behind its material and the
-    /// matte drawn over it are the same colour without a second copy of the
-    /// numbers to keep in step.
+    /// that want an `NSColor` and keep it. The window's own ground is the
+    /// package's `Palette.NS.ground` / `Palette.ground` — white in the light
+    /// theme, the shared near-black in the dark — and the dark theme's wash
+    /// over the material is that same ground, so that the opaque window of the
+    /// Reduce Transparency case and the see-through one of the dark theme are
+    /// one colour without a second copy of the numbers to keep in step.
     enum Pair {
         /// The pair looked up by the appearance the window is in. One
         /// provider, resolved wherever the colour is drawn — which is what
@@ -177,19 +147,6 @@ extension Look {
         case .dark: return .system
         case .system: return .light
         }
-    }
-}
-
-/// Whether the Mac has been asked for less transparency (System Settings ›
-/// Accessibility › Display). The glass is a courtesy and not a feature: with
-/// the setting on, the light window is drawn as a solid pale surface instead,
-/// which is what every system window does with its own materials.
-///
-/// Read afresh every time it is asked, rather than once: System Settings is
-/// allowed to change while a player is open.
-enum Transparency {
-    static var allowed: Bool {
-        !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
     }
 }
 

@@ -1,86 +1,51 @@
 import AppKit
 import SwiftUI
 
-// One public AppKit behind-window material, not stacked materials or private
-// blur filters. P-10R reduces the veil and confines the highlights to the rim;
-// the compositor still owns backdrop sampling. The result must be accepted on
-// the owner's wallpaper — public AppKit does not expose a refraction radius.
-// Dark matte and the opaque accessibility fallback do not use this recipe.
+// One public AppKit behind-window material, and nothing drawn over it. The
+// material owns the blur, the light along the top edge and the weight at the
+// foot; the window owns the focus state the material follows; the app owns one
+// wash for the dark theme and nothing else. The five drawn layers that used to
+// sit over this pane (a lift, a sheen, a foot, a rim and, in the dark, a matte
+// gradient — P5 spec, A.1) were the app imitating what the material already
+// does, and none of them could know the colour of the desk the window is on.
+// They are gone. The public AppKit surface still does not expose a refraction
+// radius, so what is left must be accepted on the owner's wallpaper as it is.
 
 /// The whole surface of the window, under everything it shows.
+///
+/// One material in both themes. What the dark theme adds is a wash of the
+/// series' ground over that material rather than a surface of its own: the
+/// window keeps answering to the desk behind it, to the Mac's focus, to Reduce
+/// Transparency and to Increase Contrast, and the only thing the app decides is
+/// how much of the ground it lays on top (P5 spec, C.6, variant B).
 struct Surface: View {
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    var body: some View {
-        Group {
-            if scheme == .light, !reduceTransparency {
-                Glass()
-            } else {
-                Matte()
-            }
-        }
-        .ignoresSafeArea()
-    }
-}
-
-/// The light theme: one pane of glass over the whole window.
-private struct Glass: View {
-    /// Keep the macOS 14-compatible material but lower its opacity and washes.
-    /// No unsupported NSGlassEffectView availability guesses or private APIs.
-    private static let material: NSVisualEffectView.Material = .underWindowBackground
+    /// How much of `Palette.ground` the dark theme lays over the material.
+    ///
+    /// One named number, because it is one knob and the one thing in this file
+    /// that may need tuning: on busy wallpaper it wants to go up, on a dark
+    /// desk down, and at `1` the dark window is the flat, opaque matte it wore
+    /// before this wave (P5 spec, C.6). The light theme lays nothing over the
+    /// material at all.
+    private static let matteDensity: CGFloat = 0.92
 
     var body: some View {
         ZStack {
             // The blur, and the desktop behind it. Nothing here draws a blur of
             // its own: a system material is cheaper, sharper, and the only kind
             // that blends with what is on the other side of the window at all.
-            VisualEffect(material: Self.material, blending: .behindWindow, density: 0.78)
-            // Thin optical cues rather than a full-height white curtain.
-            Palette.Glass.lift
-            LinearGradient(
-                colors: [Palette.Glass.sheen, Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 64)
-            .frame(maxHeight: .infinity, alignment: .top)
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                LinearGradient(
-                    colors: [Color.clear, Palette.Glass.foot],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 120)
+            // `underWindowBackground` is the material documented for this
+            // place — a view that should read as the back of the window having
+            // peeled away — and `behindWindow` is what makes it sample the desk
+            // rather than the window's own contents.
+            VisualEffect(material: .underWindowBackground, blending: .behindWindow)
+            if scheme == .dark {
+                Palette.ground.opacity(Self.matteDensity)
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(colors: [.white.opacity(0.32), .white.opacity(0.04), .black.opacity(0.08)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1
-                )
-        }
         .allowsHitTesting(false)
-    }
-}
-
-/// The dark theme: one flat, opaque, almost-black surface over the whole
-/// window, with the shadow of a vertical gradient on it so that it reads as a
-/// surface rather than as a fill — and nothing else at all.
-private struct Matte: View {
-    var body: some View {
-        ZStack {
-            Palette.ground
-            LinearGradient(
-                colors: [Color.black.opacity(0.32), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .allowsHitTesting(false)
+        .ignoresSafeArea()
     }
 }
 
@@ -90,20 +55,28 @@ private struct Matte: View {
 /// window's own contents, and it is the whole difference between glass and a
 /// grey panel. It only means anything inside a window that is not opaque — see
 /// `WindowDress`, which is where the window is told that it is not.
+///
+/// There is no density here because materials do not have one: AppKit's
+/// `Material` is a set of purposes, not of thicknesses, and a view `alphaValue`
+/// is not a thicker material but a half-transparent picture of one. Where the
+/// window wants more ground it lays a colour, as the dark theme does in
+/// `Surface`.
 struct VisualEffect: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blending: NSVisualEffectView.BlendingMode
-    var density: CGFloat = 1
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NeverInTheWay()
-        view.alphaValue = density
         view.material = material
         view.blendingMode = blending
-        // Active rather than following the window: a player left open behind
-        // another window is a player being listened to, and its surface should
-        // not go flat just because the app in front is somebody else's.
-        view.state = .active
+        // Following the window, which is the platform's default said out loud:
+        // a surface that stays lit while the traffic lights and the toolbar
+        // have gone flat is a window in two focus states at once, and the flat
+        // one is the true one (P5 spec, A.7). A player left playing behind
+        // another app is still a window that is not the front one, and the Mac
+        // says so in one movement.
+        view.state = .followsWindowActiveState
+        // Emphasis is first-responder business, not beauty's.
         view.isEmphasized = false
         view.autoresizingMask = [.width, .height]
         return view
@@ -114,7 +87,6 @@ struct VisualEffect: NSViewRepresentable {
         // update of the window's body — the progress bar ticks its way through
         // a track several times a second — and setting a material that is
         // already set asks the compositor to do the blur again for nothing.
-        if view.alphaValue != density { view.alphaValue = density }
         if view.material != material { view.material = material }
         if view.blendingMode != blending { view.blendingMode = blending }
     }
@@ -128,10 +100,12 @@ struct VisualEffect: NSViewRepresentable {
     }
 }
 
-/// The window itself, told what the surface is: transparent where the glass
-/// needs the desktop behind it, opaque where the matte is the whole window,
-/// and with the title bar out of the way in both — which is what lets the
-/// system's own toolbar sit in a band of the same glass as everything under it.
+/// The window itself, told what the surface is: transparent so that the
+/// material has the desktop to work with, opaque when the Mac has asked for
+/// less transparency — which is the window's contract and the only branch left
+/// of the seven the surfaces used to have — and with the title bar out of the
+/// way in both, which is what lets the system's own toolbar sit in a band of the
+/// same material as everything under it.
 ///
 /// It is set from a real view inside the window, because that is the only
 /// place SwiftUI lets an app reach its own window from — and it is set again
@@ -141,26 +115,37 @@ struct VisualEffect: NSViewRepresentable {
 /// over anything set too early. The browser learned the same lesson (its
 /// WindowSetup says so); this is its recipe.
 struct WindowDress: NSViewRepresentable {
-    /// The look that is on, resolved: true when the light one is, whose
-    /// surface is glass and whose window therefore has to be see-through.
-    let glass: Bool
+    /// Whether the Mac has been asked for less transparency (System Settings ›
+    /// Accessibility › Display). `solid`, because `opaque` is NSView's own word
+    /// and this view is an NSView (and because what it asks for is a window with
+    /// nothing behind it for the material to sample).
+    ///
+    /// This is the whole of the app's answer to that setting, and it stops at
+    /// the window, which is as far as the contract goes: "if this property's
+    /// value is true, UI (mainly window) backgrounds should not be
+    /// semi-transparent; they should be opaque" (`NSAccessibility.h`). The
+    /// materials themselves are the platform's to thicken, and it does — what
+    /// the app must not do is swap its surface for a different one, which is
+    /// what seven manual reads and two copied sources of the same truth used to
+    /// amount to (P5 spec, A.4).
+    let solid: Bool
     let presentation: Presentation
 
     func makeNSView(context: Context) -> Probe { Probe() }
 
     func updateNSView(_ view: Probe, context: Context) {
         view.presentation = presentation
-        view.glass = glass
+        view.solid = solid
     }
 
     final class Probe: NSView {
         weak var presentation: Presentation?
-        var glass = false {
+        var solid = false {
             // And again only when it is a different one: dressing the window
             // is cheap, but it is not free, and this is handed the same value
             // on every one of the window's many redraws.
             didSet {
-                guard glass != oldValue else { return }
+                guard solid != oldValue else { return }
                 dress()
             }
         }
@@ -192,7 +177,7 @@ struct WindowDress: NSViewRepresentable {
             // surface rather than a second material laid over the first, and
             // the line the platform draws between a toolbar and its content is
             // asked not to be, because there is nothing on either side of it
-            // but the same pane of glass.
+            // but the same pane of material.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.titlebarSeparatorStyle = .none
@@ -206,19 +191,22 @@ struct WindowDress: NSViewRepresentable {
             window.isMovableByWindowBackground = false
             window.isMovable = true
             window.hasShadow = true
-            if glass, Transparency.allowed {
-                // Non-opaque and clear. There is no other way: an opaque
-                // window has nothing behind it for a material to blur, and
-                // that is what "the glass is not visible" comes down to.
-                window.isOpaque = false
-                window.backgroundColor = .clear
-            } else {
-                // Matte, or glass where the Mac has asked for less
-                // transparency: the whole window is this one colour, and the
-                // desktop behind it is nobody's business. The colour resolves
-                // itself against the appearance the window is in.
+            if solid {
+                // Less transparency, asked for by the Mac: the whole window is
+                // this one colour and the desktop behind it is nobody's
+                // business. The material over it is the platform's own, and
+                // the platform thickens it further by itself.
                 window.isOpaque = true
                 window.backgroundColor = Palette.NS.ground
+            } else {
+                // Non-opaque and clear. There is no other way: an opaque
+                // window has nothing behind it for a material to blur, and
+                // that is what "the glass is not visible" comes down to. The
+                // dark theme's ground is laid over the material in `Surface`,
+                // not here — the window stays see-through, and the material
+                // keeps its focus, its accessibility and its desktop tinting.
+                window.isOpaque = false
+                window.backgroundColor = .clear
             }
         }
     }
