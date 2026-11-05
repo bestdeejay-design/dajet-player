@@ -148,7 +148,6 @@ struct PlayerView: View {
     /// else's.
     @FocusState private var barFocused: Bool
 
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// SwiftUI's own way of asking for this window back, which is what the tray
     /// does when the window has been closed and there is nothing among the
@@ -160,8 +159,10 @@ struct PlayerView: View {
             // The look, under everything: the whole window, the toolbar's band
             // included.
             Surface()
-            // The window itself, told what the surface is.
-            WindowDress(glass: scheme == .light && !reduceTransparency, presentation: presentation)
+            // The window itself, told what the surface is: see-through for the
+            // material in both themes, opaque only when the Mac has asked for
+            // less transparency.
+            WindowDress(solid: reduceTransparency, presentation: presentation)
                 .frame(width: 0, height: 0)
 
             // The column and the player, held by the system's own split view:
